@@ -1613,8 +1613,9 @@ function loadFile(file) {{
 </script>
 
 <!-- Safe JSON data for symbol lookup -->
-<script type="application/json" id="sym-data">{sym_data_json}</script>
+<script type="application/json" id="sym-data">__SYM_DATA_PLACEHOLDER__</script>
 
 </body>
 </html>"""
+    html = html.replace('__SYM_DATA_PLACEHOLDER__', sym_data_json)
     return html
