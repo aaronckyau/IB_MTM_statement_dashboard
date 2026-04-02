@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IB 結單 · {{ acc_id }}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        cream: '#f8faf8',
+        'green-forest': '#166534',
+        'green-mid':    '#15803d',
+        'green-light':  '#dcfce7',
+        'green-border': '#d4e4d4',
+        'green-muted':  '#bbddbf',
+        'ink':          '#1c2b1e',
+      },
+      fontFamily: {
+        serif: ['Libre Baskerville', 'Georgia', 'serif'],
+        sans:  ['IBM Plex Sans', 'sans-serif'],
+        mono:  ['IBM Plex Mono', 'monospace'],
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Sans', sans-serif; background: #f8faf8; color: #1c2b1e; font-size: 14px; line-height: 1.6; min-height: 100vh; }
+  .font-mono { font-family: 'IBM Plex Mono', monospace; }
+  .pos { color: #15803d; }
+  .neg { color: #b91c1c; }
+  .neu { color: #1c2b1e; }
+  .site-header { background: #ffffff; border-bottom: 2px solid #166534; padding: 0 32px; display: flex; align-items: stretch; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .header-brand { display: flex; align-items: center; gap: 14px; padding: 16px 0; }
+  .header-logo { width: 36px; height: 36px; background: #166534; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .header-title { font-family: 'Libre Baskerville', serif; font-size: 16px; font-weight: 700; color: #166534; }
+  .header-sub { font-size: 11px; color: #5a6e5c; margin-top: 1px; font-family: 'IBM Plex Mono', monospace; }
+  .header-meta { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 5px; padding: 14px 0; }
+  .period-pill { display: inline-flex; align-items: center; gap: 6px; background: #f0f7f1; border: 1px solid #d4e4d4; border-radius: 5px; padding: 4px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #166534; font-weight: 500; }
+  .twr-tag { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #5a6e5c; }
+  .metric-tile { background: #ffffff; border: 1px solid #d4e4d4; border-radius: 8px; padding: 16px 18px; border-top: 3px solid #d4e4d4; }
+  .metric-tile.t-pos { border-top-color: #15803d; }
+  .metric-tile.t-neg { border-top-color: #b91c1c; }
+  .metric-tile.t-neu { border-top-color: #166534; }
+  .metric-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #8a9e8c; margin-bottom: 8px; }
+  .metric-value { font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 500; line-height: 1.2; }
+  .metric-sub { font-size: 11px; color: #8a9e8c; margin-top: 4px; font-family: 'IBM Plex Mono', monospace; }
+  .tab-bar { display: flex; gap: 0; border-bottom: 2px solid #d4e4d4; margin-bottom: 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .nav-btn { padding: 10px 18px; font-size: 13px; font-weight: 500; border: none; background: transparent; color: #8a9e8c; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.15s, border-color 0.15s; font-family: 'IBM Plex Sans', sans-serif; white-space: nowrap; }
+  .nav-btn.active { color: #166534; border-bottom-color: #166534; font-weight: 600; }
+  .nav-btn:hover:not(.active) { color: #374840; }
+  .data-card { background: #ffffff; border: 1px solid #d4e4d4; border-radius: 8px; overflow: hidden; }
+  .data-card-header { padding: 12px 18px; border-bottom: 1px solid #e8f0e8; display: flex; align-items: center; justify-content: space-between; background: #f6fbf6; }
+  .card-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #374840; }
+  .card-badge { font-size: 11px; padding: 2px 9px; border-radius: 4px; background: #dcfce7; color: #166534; font-family: 'IBM Plex Mono', monospace; font-weight: 500; border: 1px solid #bbddbf; }
+  .card-badge-red { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  table { width: 100%; border-collapse: collapse; }
+  .table-head-row { border-bottom: 2px solid #e8f0e8; background: #f6fbf6; }
+  .th-l, .th-r { padding: 9px 12px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #8a9e8c; white-space: nowrap; }
+  .th-l { text-align: left; }
+  .th-r { text-align: right; }
+  .th-group { padding: 4px 12px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #a8b8a8; text-align: center; border-bottom: 1px solid #e8f0e8; background: #f9fcf9; }
+  tr { border-bottom: 1px solid #eef5ee; }
+  tr:last-child { border-bottom: none; }
+  tr:hover { background: #f6fbf6; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.02em; border: 1px solid transparent; white-space: nowrap; }
+  .badge-hold   { background: #dcfce7; color: #166534; border-color: #bbddbf; }
+  .badge-closed { background: #f1f5f1; color: #8a9e8c; border-color: #d4e4d4; }
+  .badge-short  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .badge-ccy    { background: #f0fdf4; color: #166534; border-color: #bbddbf; }
+  .ticker-chip { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; color: #166534; background: #f0f7f1; border: 1px solid #d4e4d4; border-radius: 4px; padding: 2px 7px; letter-spacing: 0.03em; white-space: nowrap; }
+  .col-sep { border-left: 1px solid #e8f0e8; }
+  .summary-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 18px; border-bottom: 1px solid #eef5ee; }
+  .summary-item:last-child { border-bottom: none; }
+  .recon-link { color: #166534; text-decoration: none; font-size: 13px; }
+  .recon-link:hover { text-decoration: underline; }
+  .recon-expandable:hover { background: #f6fbf6; }
+  .summary-total { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; background: #f0f7f1; border-top: 2px solid #d4e4d4; }
+  .upload-zone { border: 1.5px dashed #bbddbf; border-radius: 8px; cursor: pointer; transition: border-color 0.2s, background 0.2s; background: #ffffff; }
+  .upload-zone:hover, .upload-zone.drag { border-color: #166534; background: #f0f7f1; }
+  .upload-zone input { display: none; }
+  .chart-wrap { position: relative; width: 100%; height: 220px; padding: 14px 18px; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  .main-panel { animation: fadeUp 0.16s ease-out; }
+  .hidden { display: none !important; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #f0f7f1; }
+  ::-webkit-scrollbar-thumb { background: #bbddbf; border-radius: 3px; }
+  .empty-state { padding: 40px; text-align: center; color: #8a9e8c; font-size: 13px; }
+  tr.total-row { background: #f0f7f1; border-top: 2px solid #d4e4d4 !important; }
+  tr.total-row td { padding-top: 10px; padding-bottom: 10px; }
+  tr.total-row:hover { background: #e8f5ea; }
+  .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  .sortable:hover { background: #eef5ee !important; }
+  .sort-icon { display: inline-block; font-size: 9px; color: #bbddbf; margin-left: 3px; vertical-align: middle; transition: color 0.1s; }
+  .sortable:hover .sort-icon { color: #8a9e8c; }
+  .sort-asc .sort-icon, .sort-desc .sort-icon { color: #166534 !important; font-size: 0; }
+  .sort-asc .sort-icon::after { content: '↑'; font-size: 10px; }
+  .sort-desc .sort-icon::after { content: '↓'; font-size: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header class="site-header">
+  <div class="header-brand">
+    <div class="header-logo">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+        <path d="M3 14l4-5 3 3 3-4 4 6" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="16" cy="5" r="2" fill="white" opacity="0.7"/>
+      </svg>
+    </div>
+    <div>
+      <div class="header-title">IB 結單儀表板</div>
+      <div class="header-sub">{{ acc_name }} · {{ acc_id }}</div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <div class="period-pill">
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+        <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="#166534" stroke-width="1.3"/>
+        <path d="M4 1v2M8 1v2M1 5h10" stroke="#166534" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      {{ period }}
+    </div>
+    <div class="twr-tag">時間加權報酬 {{ twr_display }}</div>
+  </div>
+</header>
+
+<div style="max-width:1440px;margin:0 auto;padding:24px 32px;">
+
+<!-- ── UPLOAD ── -->
+<label class="upload-zone flex items-center gap-4 px-5 py-4 mb-6" id="dropZone">
+  <input type="file" id="csvInput" accept=".csv">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8a9e8c" stroke-width="1.8" stroke-linecap="round">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+  </svg>
+  <div>
+    <div style="font-size:13px;font-weight:500;color:#374840;">上載另一份結單</div>
+    <div style="font-size:11px;color:#8a9e8c;margin-top:2px;">拖放或點擊 · 支援 IB MTM 摘要及活動結單（中英文）</div>
+  </div>
+</label>
+
+<!-- ── METRIC TILES ── -->
+<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px;">
+  <div class="metric-tile t-neu">
+    <div class="metric-label">期初 NAV</div>
+    <div class="metric-value neu">{{ fmt_usd(start_nav) }}</div>
+    <div class="metric-sub">期間開始</div>
+  </div>
+  <div class="metric-tile t-neu">
+    <div class="metric-label">期末 NAV</div>
+    <div class="metric-value neu">{{ fmt_usd(end_nav) }}</div>
+    <div class="metric-sub">期間結束</div>
+  </div>
+  <div class="metric-tile {{ 't-pos' if nav_chg >= 0 else 't-neg' }}">
+    <div class="metric-label">期間變動</div>
+    <div class="metric-value {{ nav_chg_cls }}">{{ pnl_fmt(nav_chg) }}</div>
+    <div class="metric-sub {{ nav_chg_cls }}">TWR {{ twr_display }}</div>
+  </div>
+  <div class="metric-tile {{ 't-pos' if mtm >= 0 else 't-neg' }}">
+    <div class="metric-label">MTM 盈虧</div>
+    <div class="metric-value {{ mtm_cls }}">{{ pnl_fmt(mtm) }}</div>
+    <div class="metric-sub">按市值計價</div>
+  </div>
+  <div class="metric-tile t-pos">
+    <div class="metric-label">股息（稅後）</div>
+    <div class="metric-value pos">+{{ fmt_usd(divid + withh) }}</div>
+    <div class="metric-sub">預扣稅 {{ fmt_usd(withh|abs) }}</div>
+  </div>
+  <div class="metric-tile t-neg">
+    <div class="metric-label">總費用</div>
+    <div class="metric-value neg">{{ pnl_fmt(intst + ofees + comms) }}</div>
+    <div class="metric-sub">息＋行情費＋佣金</div>
+  </div>
+</div>
+
+<!-- ── TAB BAR ── -->
+<div class="tab-bar">
+  <button class="nav-btn active" onclick="showMain('overview',this)">總覽</button>
+  <button class="nav-btn" onclick="showMain('mtm',this)">按市值計價</button>
+  {% if wdrs %}<button class="nav-btn" onclick="showMain('tab-withdrawals',this)">存款和取款</button>{% endif %}
+  <button class="nav-btn" onclick="showMain('tab-dividends',this)">股息</button>
+  <button class="nav-btn" onclick="showMain('tab-withholding',this)">代扣稅款</button>
+  {% if div_accr_items %}<button class="nav-btn" onclick="showMain('tab-div-accruals',this)">應計股息的變化</button>{% endif %}
+  <button class="nav-btn" onclick="showMain('tab-interest',this)">利息</button>
+  {% if int_accr_items %}<button class="nav-btn" onclick="showMain('tab-int-accruals',this)">應計利息變更</button>{% endif %}
+  <button class="nav-btn" onclick="showMain('tab-fees',this)">其它費用</button>
+  <button class="nav-btn" onclick="showMain('tab-commissions',this)">佣金</button>
+  <button class="nav-btn" onclick="showMain('tab-symbol',this)">代碼查詢</button>
+</div>
+
+<!-- ══════════ OVERVIEW ══════════ -->
+<div id="main-overview" class="main-panel">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="data-card">
+      <div class="data-card-header"><span class="card-title">淨資產值變動明細</span></div>
+      <div class="summary-total">
+        <span style="font-size:12px;font-weight:600;color:#374840;">淨變動合計</span>
+        <span class="font-mono" style="font-size:14px;font-weight:600;color:{{ '#15803d' if nav_chg >= 0 else '#b91c1c' }}">{{ pnl_fmt(nav_chg) }}</span>
+      </div>
+      <div style="border-bottom:1px solid #e8f0e8;"></div>
+      {% for item in recon_items %}
+        {% if item.is_mtm %}
+          <div class="summary-item recon-expandable" onclick="toggleMtm(this)" style="cursor:pointer;">
+            <span style="font-size:13px;color:#374840;display:flex;align-items:center;gap:6px;">
+              <svg class="mtm-arrow" width="10" height="10" viewBox="0 0 10 10" fill="none" style="transition:transform .2s;flex-shrink:0;"><path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              {{ item.label }}
+            </span>
+            <span class="font-mono text-sm font-medium {{ pnl_class(item.val) }}">{{ pnl_fmt(item.val) }}</span>
+          </div>
+          <div class="mtm-children" style="display:none;">
+            <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">股票持倉</a><span class="font-mono text-sm {{ pnl_class(stk_open_pnl) }}">{{ pnl_fmt(stk_open_pnl) }}</span></div>
+            <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">股票平倉</a><span class="font-mono text-sm {{ pnl_class(stk_closed_pnl) }}">{{ pnl_fmt(stk_closed_pnl) }}</span></div>
+            <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">期權持倉</a><span class="font-mono text-sm {{ pnl_class(opt_open_pnl) }}">{{ pnl_fmt(opt_open_pnl) }}</span></div>
+            <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">期權平倉</a><span class="font-mono text-sm {{ pnl_class(opt_closed_pnl) }}">{{ pnl_fmt(opt_closed_pnl) }}</span></div>
+          </div>
+        {% elif item.tab_id %}
+          <div class="summary-item">
+            <a onclick="showMain('{{ item.tab_id }}',null)" href="#" class="recon-link">{{ item.label }}</a>
+            <span class="font-mono text-sm font-medium {{ pnl_class(item.val) }}">{{ pnl_fmt(item.val) }}</span>
+          </div>
+        {% else %}
+          <div class="summary-item">
+            <span class="text-sm text-stone-600">{{ item.label }}</span>
+            <span class="font-mono text-sm font-medium {{ pnl_class(item.val) }}">{{ pnl_fmt(item.val) }}</span>
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="empty-state">無資料</div>
+      {% endfor %}
+    </div>
+    <div class="data-card">
+      <div class="data-card-header"><span class="card-title">盈虧來源分析</span></div>
+      <div class="chart-wrap"><canvas id="navChart"></canvas></div>
+    </div>
+  </div>
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">持倉 MTM 盈虧（前 12 名）</span></div>
+    <div class="chart-wrap" style="height:240px;"><canvas id="stockChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ══════════ 按市值計價 ══════════ -->
+<div id="main-mtm" class="main-panel hidden">
+
+  {# ── Macro for stock table header ── #}
+  {% macro stk_thead() %}
+  <thead>
+    <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
+      <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">代碼 <span class="sort-icon">↕</span></th>
+      <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">名稱 <span class="sort-icon">↕</span></th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉數量</th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉 / 交易盈虧</th>
+      <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">佣金 <span class="sort-icon">↕</span></th>
+      <th class="th-group sortable" rowspan="2" data-col="11" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
+    </tr>
+    <tr class="table-head-row">
+      <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
+      <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
+      <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
+      <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
+    </tr>
+  </thead>
+  {% endmacro %}
+
+  {# ── Macro for option table header ── #}
+  {% macro opt_thead() %}
+  <thead>
+    <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
+      <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">合約 <span class="sort-icon">↕</span></th>
+      <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">描述 <span class="sort-icon">↕</span></th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">數量</th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
+      <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">盈虧</th>
+      <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">佣金 <span class="sort-icon">↕</span></th>
+      <th class="th-group sortable" rowspan="2" data-col="11" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
+      <th class="th-group" rowspan="2" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">狀態</th>
+    </tr>
+    <tr class="table-head-row">
+      <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
+      <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
+      <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
+      <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
+      <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
+    </tr>
+  </thead>
+  {% endmacro %}
+
+  {# ── Macro: contract badge ── #}
+  {% macro contract_badge(contract) %}
+    {% set parts = contract.strip().split() %}
+    {% if parts|length >= 4 %}
+      {% set cp = parts[3]|upper %}
+      {% if cp == 'C' %}
+        {% set cp_style = 'background:#dcfce7;color:#166534;border:1px solid #bbddbf;' %}
+      {% else %}
+        {% set cp_style = 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;' %}
+      {% endif %}
+      <span class="ticker-chip" style="font-size:10px;">{{ parts[0] }}</span>
+      <span style="font-size:9px;font-family:'IBM Plex Mono',monospace;color:#5a6e5c;">{{ parts[1] }}</span>
+      <span style="font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;color:#374840;">${{ parts[2] }}</span>
+      <span style="font-size:9px;padding:1px 5px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-weight:700;{{ cp_style }}">{{ cp }}</span>
+    {% else %}
+      <span class="ticker-chip" style="font-size:10px;">{{ contract }}</span>
+    {% endif %}
+  {% endmacro %}
+
+  {# ── Macro: carryover badge ── #}
+  {% macro carryover(prev_qty) %}
+    {% if prev_qty != 0 %}
+      <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">持倉轉入</span>
+    {% endif %}
+  {% endmacro %}
+
+  {# ── Macro: stock summary + detail rows ── #}
+  {% macro stock_rows(group) %}
+    {% for s in group %}
+      <tr>
+        <td class="px-3 py-2.5" data-val="{{ s.ticker }}">
+          {% if s.details %}
+            <svg id="sarr-{{ s.tid }}" width="10" height="10" viewBox="0 0 10 10" fill="none" style="display:inline;margin-right:4px;transition:transform .2s;cursor:pointer;" onclick="toggleDet('s{{ s.tid }}',this)"><path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          {% endif %}
+          <span class="ticker-chip">{{ s.ticker }}</span>
+        </td>
+        <td class="px-3 py-2.5 text-xs text-stone-500 max-w-[140px] truncate" data-val="{{ s.name }}">{{ s.name }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{{ s.prev_qty }}">{{ dash(s.prev_qty, '{:g}'.format) if s.prev_qty else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{{ s.qty }}">{{ dash(s.qty, '{:g}'.format) if s.qty else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{{ s.prev_px }}">{{ fmt_px2(s.prev_px) if s.prev_px else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{{ s.px }}">{{ fmt_px2(s.px) if s.px else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{{ s.prev_mv }}">{{ fmt_usd(s.prev_mv) if s.prev_mv else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm" data-val="{{ s.mv }}">{{ fmt_usd(s.mv) if s.mv else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(s.pos_pnl) }}" data-val="{{ s.pos_pnl }}">{{ pnl_fmt(s.pos_pnl) if s.pos_pnl else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(s.trd_pnl) }}" data-val="{{ s.trd_pnl }}">{{ pnl_fmt(s.trd_pnl) if s.trd_pnl else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(s.comm) }}" data-val="{{ s.comm }}">{{ pnl_fmt(s.comm) if s.comm else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {{ pnl_class(s.eff_pnl) }}" data-val="{{ s.eff_pnl }}">{{ pnl_fmt(s.eff_pnl) }}</td>
+      </tr>
+      {% for d in s.details %}
+        <tr class="det-s{{ s.tid }}" style="display:none;background:#f8fcf8;">
+          <td class="px-3 py-1.5 text-xs text-stone-400" style="padding-left:28px;">↳ {{ fmt_qty(d.prev_qty) if d.prev_qty else '—' }} → {{ fmt_qty(d.qty) if d.qty else '—' }} {{ carryover(d.prev_qty) }}</td>
+          <td class="px-3 py-1.5 text-xs text-stone-400"></td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{{ fmt_qty(d.prev_qty) if d.prev_qty else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs">{{ fmt_qty(d.qty) if d.qty else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{{ fmt_px2(d.prev_px) if d.prev_px else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs">{{ fmt_px2(d.px) if d.px else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{{ fmt_usd(d.prev_mv) if d.prev_mv else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs">{{ fmt_usd(d.mv) if d.mv else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs {{ pnl_class(d.pos_pnl) }}">{{ pnl_fmt(d.pos_pnl) if d.pos_pnl else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs {{ pnl_class(d.trd_pnl) }}">{{ pnl_fmt(d.trd_pnl) if d.trd_pnl else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs {{ pnl_class(d.comm) }}">{{ pnl_fmt(d.comm) if d.comm else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs font-semibold {{ pnl_class(d.cash_flow) }}">{{ pnl_fmt(d.cash_flow) }}</td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+  {% endmacro %}
+
+  {# ── Macro: option rows ── #}
+  {% macro opt_rows(group) %}
+    {% for o in group %}
+      <tr>
+        <td class="px-3 py-2.5" data-val="{{ o.contract }}">
+          {% if o.details %}
+            <svg id="oarr-{{ o.tid }}" width="10" height="10" viewBox="0 0 10 10" fill="none" style="display:inline;margin-right:4px;transition:transform .2s;cursor:pointer;" onclick="toggleDet('o{{ o.tid }}',this)"><path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          {% endif %}
+          {{ contract_badge(o.contract) }}
+        </td>
+        <td class="px-3 py-2.5 text-xs text-stone-500 max-w-[160px] truncate" data-val="{{ o.desc }}">{{ o.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{{ o.prev_qty }}">{{ fmt_qty(o.prev_qty) if o.prev_qty else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{{ o.qty }}">{{ fmt_qty(o.qty) if o.qty else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{{ o.prev_px }}">{{ fmt_px4(o.prev_px) if o.prev_px else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{{ o.px }}">{{ fmt_px4(o.px) if o.px else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{{ o.prev_mv }}">{{ fmt_usd(o.prev_mv) if o.prev_mv else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm" data-val="{{ o.mv }}">{{ fmt_usd(o.mv) if o.mv else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(o.pos_pnl) }}" data-val="{{ o.pos_pnl }}">{{ pnl_fmt(o.pos_pnl) if o.pos_pnl else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(o.trd_pnl) }}" data-val="{{ o.trd_pnl }}">{{ pnl_fmt(o.trd_pnl) if o.trd_pnl else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(o.comm) }}" data-val="{{ o.comm }}">{{ pnl_fmt(o.comm) if o.comm else '—' }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {{ pnl_class(o.eff_pnl) }}" data-val="{{ o.eff_pnl }}">{{ pnl_fmt(o.eff_pnl) }}</td>
+        <td class="px-3 py-2.5 text-right"><span class="badge {{ o.status_cls }}">{{ o.status }}</span></td>
+      </tr>
+      {% for d in o.details %}
+        <tr class="det-o{{ o.tid }}" style="display:none;background:#f8fcf8;">
+          <td class="px-3 py-1.5" style="padding-left:28px;">
+            ↳ <span style="font-size:10px;color:#8a9e8c;font-family:'IBM Plex Mono',monospace;">{{ fmt_qty(d.prev_qty) if d.prev_qty else '—' }} → {{ fmt_qty(d.qty) if d.qty else '—' }}</span>
+            {{ carryover(d.prev_qty) }} {{ contract_badge(d.contract) }}
+          </td>
+          <td class="px-3 py-1.5 text-xs text-stone-400"></td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{{ fmt_qty(d.prev_qty) if d.prev_qty else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs">{{ fmt_qty(d.qty) if d.qty else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{{ fmt_px4(d.prev_px) if d.prev_px else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs">{{ fmt_px4(d.px) if d.px else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{{ fmt_usd(d.prev_mv) if d.prev_mv else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs">{{ fmt_usd(d.mv) if d.mv else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs {{ pnl_class(d.pos_pnl) }}">{{ pnl_fmt(d.pos_pnl) if d.pos_pnl else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs {{ pnl_class(d.trd_pnl) }}">{{ pnl_fmt(d.trd_pnl) if d.trd_pnl else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs {{ pnl_class(d.comm) }}">{{ pnl_fmt(d.comm) if d.comm else '—' }}</td>
+          <td class="px-3 py-1.5 text-right font-mono text-xs font-semibold {{ pnl_class(d.cash_flow) }}">{{ pnl_fmt(d.cash_flow) }}</td>
+          <td></td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+  {% endmacro %}
+
+  {# ── Macro: total row ── #}
+  {% macro total_row(t, has_status=false) %}
+    {% if t %}
+    <tr class="total-row">
+      <td class="px-3 py-2.5 text-xs font-semibold text-stone-500" colspan="2">合計 ({{ t.count }} 個)</td>
+      <td class="px-3 py-2.5"></td><td class="px-3 py-2.5"></td><td class="px-3 py-2.5"></td><td class="px-3 py-2.5"></td>
+      <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">{{ fmt_usd(t.prev_mv) }}</td>
+      <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold text-stone-700">{{ fmt_usd(t.mv) }}</td>
+      <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {{ pnl_class(t.pos_pnl) }}">{{ pnl_fmt(t.pos_pnl) }}</td>
+      <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {{ pnl_class(t.trd_pnl) }}">{{ pnl_fmt(t.trd_pnl) }}</td>
+      <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {{ pnl_class(t.comm) }}">{{ pnl_fmt(t.comm) }}</td>
+      <td class="px-3 py-2.5 text-right font-mono text-sm font-bold {{ pnl_class(t.eff_pnl) }}">{{ pnl_fmt(t.eff_pnl) }}</td>
+      {% if has_status %}<td class="px-3 py-2.5"></td>{% endif %}
+    </tr>
+    {% endif %}
+  {% endmacro %}
+
+  <div class="data-card" style="margin-bottom:16px;">
+    <div class="data-card-header"><span class="card-title">股票持倉</span><span class="card-badge">{{ stocks_open|length }} 個代碼</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-stock-open">
+      {{ stk_thead() }}
+      <tbody>
+        {% if stocks_open %}{{ stock_rows(stocks_open) }}{{ total_row(stk_open_total) }}
+        {% else %}<tr><td colspan="12" class="empty-state">無持倉股票</td></tr>{% endif %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="data-card" style="margin-bottom:16px;">
+    <div class="data-card-header"><span class="card-title">股票平倉</span><span class="card-badge" style="background:#f1f5f1;color:#8a9e8c;border-color:#d4e4d4;">{{ stocks_closed|length }} 個代碼</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-stock-closed">
+      {{ stk_thead() }}
+      <tbody>
+        {% if stocks_closed %}{{ stock_rows(stocks_closed) }}{{ total_row(stk_closed_total) }}
+        {% else %}<tr><td colspan="12" class="empty-state">無平倉股票</td></tr>{% endif %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="data-card" style="margin-bottom:16px;">
+    <div class="data-card-header"><span class="card-title">期權持倉</span><span class="card-badge">{{ opts_open|length }} 張合約</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-opt-open">
+      {{ opt_thead() }}
+      <tbody>
+        {% if opts_open %}{{ opt_rows(opts_open) }}{{ total_row(opt_open_total, has_status=true) }}
+        {% else %}<tr><td colspan="13" class="empty-state">無持倉期權</td></tr>{% endif %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">期權平倉</span><span class="card-badge" style="background:#f1f5f1;color:#8a9e8c;border-color:#d4e4d4;">{{ opts_closed|length }} 張合約</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-opt-closed">
+      {{ opt_thead() }}
+      <tbody>
+        {% if opts_closed %}{{ opt_rows(opts_closed) }}{{ total_row(opt_closed_total, has_status=true) }}
+        {% else %}<tr><td colspan="13" class="empty-state">無平倉期權</td></tr>{% endif %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ══════════ 存款和取款 ══════════ -->
+<div id="main-tab-withdrawals" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">存款和取款</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead><tbody>
+      {% for w in wdrs %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-xs text-stone-500">{{ w.date }}</td>
+        <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ w.currency }}</span></td>
+        <td class="px-3 py-2.5 text-sm text-stone-600">{{ w.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(w.amount) }} font-medium">{{ pnl_fmt(w.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty-state">無存款和取款記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if wdrs %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono {{ pnl_class(wdr_total) }}" style="font-size:13px;font-weight:600;">{{ pnl_fmt(wdr_total) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 股息 ══════════ -->
+<div id="main-tab-dividends" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">股息收入</span><span class="card-badge">+{{ fmt_usd(divid) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead><tbody>
+      {% for d in divs %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-xs text-stone-500">{{ d.date }}</td>
+        <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ d.currency }}</span></td>
+        <td class="px-3 py-2.5 text-sm text-stone-600 max-w-xs truncate">{{ d.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm pos font-medium">+{{ fmt_usd(d.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty-state">無股息記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if divs %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono pos" style="font-size:13px;font-weight:600;">+{{ fmt_usd(divid) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 代扣稅款 ══════════ -->
+<div id="main-tab-withholding" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">代扣稅款</span><span class="card-badge card-badge-red">{{ pnl_fmt(wh_total_val) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead><tbody>
+      {% for i in wh_items %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-xs text-stone-500">{{ i.date }}</td>
+        <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ i.currency }}</span></td>
+        <td class="px-3 py-2.5 text-sm text-stone-600">{{ i.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(i.amount) }} font-medium">{{ pnl_fmt(i.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty-state">無代扣稅記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+
+<!-- ══════════ 應計股息的變化 ══════════ -->
+<div id="main-tab-div-accruals" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">應計股息的變化</span><span class="card-badge">{{ pnl_fmt(div_accr_total) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">代碼</th><th class="th-l">幣別</th><th class="th-r">淨額</th>
+    </tr></thead><tbody>
+      {% for i in div_accr_items %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-sm font-medium">{{ i.ticker }}</td>
+        <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ i.currency }}</span></td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(i.amount) }} font-medium">{{ pnl_fmt(i.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="3" class="empty-state">無應計股息記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if div_accr_items %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono {{ pnl_class(div_accr_total) }}" style="font-size:13px;font-weight:600;">{{ pnl_fmt(div_accr_total) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 利息 ══════════ -->
+<div id="main-tab-interest" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">利息明細</span><span class="card-badge {{ 'card-badge-red' if intst < 0 else '' }}">{{ pnl_fmt(intst) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead><tbody>
+      {% for i in int_items %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-xs text-stone-500">{{ i.date }}</td>
+        <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ i.currency }}</span></td>
+        <td class="px-3 py-2.5 text-sm text-stone-600 max-w-xs truncate">{{ i.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(i.amount) }} font-medium">{{ pnl_fmt(i.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty-state">無利息記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if int_items %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono {{ pnl_class(intst) }}" style="font-size:13px;font-weight:600;">{{ pnl_fmt(intst) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 應計利息變更 ══════════ -->
+<div id="main-tab-int-accruals" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">應計利息變更</span><span class="card-badge">{{ pnl_fmt(int_accr_total) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead><tbody>
+      {% for i in int_accr_items %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-xs text-stone-500">{{ i.date }}</td>
+        <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ i.currency }}</span></td>
+        <td class="px-3 py-2.5 text-sm text-stone-600">{{ i.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(i.amount) }} font-medium">{{ pnl_fmt(i.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="empty-state">無應計利息記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if int_accr_items %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono {{ pnl_class(int_accr_total) }}" style="font-size:13px;font-weight:600;">{{ pnl_fmt(int_accr_total) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 其它費用 ══════════ -->
+<div id="main-tab-fees" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">其它費用明細</span><span class="card-badge card-badge-red">{{ pnl_fmt(ofees) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead><tbody>
+      {% for f in fees %}
+      <tr>
+        <td class="px-3 py-2.5 font-mono text-xs text-stone-500">{{ f.date }}</td>
+        <td class="px-3 py-2.5 text-sm text-stone-600">{{ f.desc }}</td>
+        <td class="px-3 py-2.5 text-right font-mono text-sm neg font-medium">{{ pnl_fmt(f.amount) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="3" class="empty-state">無費用記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if fees %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono neg" style="font-size:13px;font-weight:600;">{{ pnl_fmt(ofees) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 佣金 ══════════ -->
+<div id="main-tab-commissions" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">佣金明細</span><span class="card-badge card-badge-red">{{ pnl_fmt(comm_total) }}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">代碼</th><th class="th-l">名稱 / 描述</th><th class="th-r">佣金</th>
+    </tr></thead><tbody>
+      {% for c in comm_list %}
+        {% if c.entries|length == 1 %}
+        <tr>
+          <td class="px-3 py-2.5 font-mono text-sm font-medium">{{ c.sym }}</td>
+          <td class="px-3 py-2.5 text-sm text-stone-500">{{ c.entries[0].name }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(c.total) }} font-medium">{{ pnl_fmt(c.total) }}</td>
+        </tr>
+        {% else %}
+          {% set uid = c.sym.replace(' ','_').replace('/','_') %}
+          <tr class="comm-group-header" onclick="toggleComm('{{ uid }}')" style="cursor:pointer;">
+            <td class="px-3 py-2.5 font-mono text-sm font-medium">
+              <svg id="arr-{{ uid }}" width="10" height="10" viewBox="0 0 10 10" fill="none" style="display:inline;margin-right:5px;transition:transform .2s;"><path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              {{ c.sym }}
+            </td>
+            <td class="px-3 py-2.5 text-sm text-stone-400">{{ c.entries|length }} 筆</td>
+            <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(c.total) }} font-medium">{{ pnl_fmt(c.total) }}</td>
+          </tr>
+          {% for e in c.entries %}
+          <tr class="comm-child-{{ uid }}" style="display:none;background:#fafcfa;">
+            <td class="px-3 py-2 text-xs text-stone-400" style="padding-left:28px;">— {{ e.name }}</td>
+            <td></td>
+            <td class="px-3 py-2 text-right font-mono text-xs {{ pnl_class(e.amount) }}">{{ pnl_fmt(e.amount) }}</td>
+          </tr>
+          {% endfor %}
+        {% endif %}
+      {% else %}<tr><td colspan="3" class="empty-state">無佣金記錄</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if comm_list %}<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono neg" style="font-size:13px;font-weight:600;">{{ pnl_fmt(comm_total) }}</span></div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════ 代碼查詢 ══════════ -->
+<div id="main-tab-symbol" class="main-panel hidden">
+  <div id="sym-ranking-wrap" class="data-card" style="margin-bottom:16px;">
+    <div class="data-card-header">
+      <span class="card-title">標的排行榜</span>
+      <span style="font-size:11px;color:#8a9e8c;">點擊行查看詳情</span>
+    </div>
+    <div style="overflow-x:auto;"><table id="sym-rank-table">
+      <thead><tr class="table-head-row">
+        <th class="th-l" style="width:40px;">#</th>
+        <th class="th-l">標的</th>
+        <th class="th-r">股票盈虧</th>
+        <th class="th-r">期權盈虧</th>
+        <th class="th-r">佣金</th>
+        <th class="th-r" style="min-width:160px;">盈虧走勢</th>
+        <th class="th-r">總盈虧</th>
+      </tr></thead>
+      <tbody id="sym-rank-body"></tbody>
+    </table></div>
+  </div>
+
+  <div id="sym-detail-wrap" style="display:none;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <button onclick="closeSym()" style="font-size:12px;padding:4px 10px;border:1px solid #d4e4d4;border-radius:5px;background:#fff;color:#5a6e5c;cursor:pointer;">← 返回排行榜</button>
+      <span id="sym-detail-title" style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#166534;background:#f0f7f1;border:1px solid #d4e4d4;border-radius:5px;padding:4px 14px;"></span>
+    </div>
+    <div id="sym-cards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
+    <div id="sym-so-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+      <div class="data-card-header"><span class="card-title">股票持倉</span></div>
+      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+        <th class="th-l">代碼</th><th class="th-l">名稱</th><th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
+        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
+      </tr></thead><tbody id="sym-so-body"></tbody></table></div>
+    </div>
+    <div id="sym-sc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+      <div class="data-card-header"><span class="card-title">股票平倉</span></div>
+      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+        <th class="th-l">代碼</th><th class="th-l">名稱</th><th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
+        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
+      </tr></thead><tbody id="sym-sc-body"></tbody></table></div>
+    </div>
+    <div id="sym-oo-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+      <div class="data-card-header"><span class="card-title">期權持倉</span></div>
+      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+        <th class="th-l">合約</th><th class="th-l">描述</th><th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
+        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
+      </tr></thead><tbody id="sym-oo-body"></tbody></table></div>
+    </div>
+    <div id="sym-oc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+      <div class="data-card-header"><span class="card-title">期權平倉</span></div>
+      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+        <th class="th-l">合約</th><th class="th-l">描述</th><th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
+        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
+      </tr></thead><tbody id="sym-oc-body"></tbody></table></div>
+    </div>
+    <div id="sym-empty" class="empty-state" style="display:none;">此標的無任何記錄</div>
+  </div>
+</div>
+
+</div><!-- end container -->
+
+<footer style="text-align:center;padding:20px;font-size:11px;color:#8a9e8c;border-top:1px solid #e8f0e8;margin-top:8px;font-family:'IBM Plex Mono',monospace;">
+  IB 結單儀表板 &nbsp;·&nbsp; 數據來自 Interactive Brokers &nbsp;·&nbsp; 僅供參考
+</footer>
+
+<!-- Safe JSON data — not executable, no injection risk -->
+<script type="application/json" id="sym-data">{{ sym_data_json }}</script>
+
+<script>
+const NAV_DATA   = {{ chart_data|safe }};
+const STOCK_DATA = {{ stock_chart|safe }};
+
+const GRID = 'rgba(166,208,170,0.35)';
+const TICK = '#8a9e8c';
+const TT = {
+  backgroundColor: '#ffffff', borderColor: '#d4e4d4', borderWidth: 1,
+  titleColor: '#374840', bodyColor: '#1c2b1e', padding: 10, cornerRadius: 5,
+  callbacks: { label: ctx => (ctx.raw >= 0 ? ' +' : ' ') + '$' + Math.abs(ctx.raw).toLocaleString('en-US', {minimumFractionDigits:2}) }
+};
+const FONT = { family: 'IBM Plex Mono' };
+
+new Chart(document.getElementById('navChart'), {
+  type: 'bar',
+  data: { labels: NAV_DATA.labels, datasets: [{ data: NAV_DATA.values, backgroundColor: NAV_DATA.colors, borderRadius: 4, borderSkipped: false }] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: TT },
+    scales: {
+      x: { grid: { color: GRID }, ticks: { color: TICK, font: {...FONT, size:10} } },
+      y: { grid: { color: GRID }, ticks: { color: TICK, font: {...FONT, size:10}, callback: v => '$' + (Math.abs(v)/1000).toFixed(1) + 'k' } }
+    }
+  }
+});
+
+new Chart(document.getElementById('stockChart'), {
+  type: 'bar',
+  data: { labels: STOCK_DATA.labels, datasets: [{ data: STOCK_DATA.values, backgroundColor: STOCK_DATA.colors, borderRadius: 4, borderSkipped: false }] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: TT },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: TICK, font: {...FONT, size:11} } },
+      y: { grid: { color: GRID }, ticks: { color: TICK, font: {...FONT, size:10}, callback: v => '$' + Math.round(Math.abs(v)) } }
+    }
+  }
+});
+
+// ── Table sorting ──
+document.querySelectorAll('.sortable-table').forEach(function(table) {
+  var state = { col: null, asc: true };
+  table.querySelectorAll('th.sortable').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col  = parseInt(th.dataset.col);
+      var type = th.dataset.type || 'str';
+      if (state.col === col) { state.asc = !state.asc; }
+      else { state.col = col; state.asc = (type === 'str'); }
+      table.querySelectorAll('th.sortable').forEach(function(h) { h.classList.remove('sort-asc','sort-desc'); });
+      th.classList.add(state.asc ? 'sort-asc' : 'sort-desc');
+      var tbody = table.querySelector('tbody');
+      var groups = [];
+      Array.from(tbody.querySelectorAll('tr')).forEach(function(r) {
+        var isChild = Array.from(r.classList).some(function(c) { return c.startsWith('det-') || c.startsWith('comm-child-'); });
+        if (!isChild) { groups.push([r]); }
+        else if (groups.length > 0) { groups[groups.length-1].push(r); }
+      });
+      groups.sort(function(a,b) {
+        var aCell = a[0].querySelectorAll('td')[col];
+        var bCell = b[0].querySelectorAll('td')[col];
+        if (!aCell || !bCell) return 0;
+        var aVal = aCell.dataset.val !== undefined ? aCell.dataset.val : aCell.textContent.trim();
+        var bVal = bCell.dataset.val !== undefined ? bCell.dataset.val : bCell.textContent.trim();
+        var cmp = (type === 'num') ? ((parseFloat(aVal)||0) - (parseFloat(bVal)||0)) : aVal.localeCompare(bVal,'zh-Hant');
+        return state.asc ? cmp : -cmp;
+      });
+      groups.forEach(function(g) { g.forEach(function(r) { tbody.appendChild(r); }); });
+    });
+  });
+});
+
+function showMain(id, btn) {
+  document.querySelectorAll('.main-panel').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('main-' + id).classList.remove('hidden');
+  if (btn) btn.classList.add('active');
+  else document.querySelectorAll('.nav-btn').forEach(b => {
+    if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + id + "'")) b.classList.add('active');
+  });
+}
+
+function toggleDet(uid, arrow) {
+  var rows = document.querySelectorAll('.det-' + uid);
+  var open = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach(function(r) { r.style.display = open ? 'none' : 'table-row'; });
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(-90deg)';
+}
+
+function toggleComm(uid) {
+  var rows  = document.querySelectorAll('.comm-child-' + uid);
+  var arrow = document.getElementById('arr-' + uid);
+  var open  = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach(function(r) { r.style.display = open ? 'none' : 'table-row'; });
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(-90deg)';
+}
+
+function toggleMtm(row) {
+  var children = row.nextElementSibling;
+  if (!children || !children.classList.contains('mtm-children')) return;
+  var open = children.style.display !== 'none';
+  children.style.display = open ? 'none' : 'block';
+  var arrow = row.querySelector('.mtm-arrow');
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(-90deg)';
+}
+
+const inp  = document.getElementById('csvInput');
+const drop = document.getElementById('dropZone');
+drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('drag');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+inp.addEventListener('change', () => { if (inp.files[0]) loadFile(inp.files[0]); });
+
+function loadFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  fetch('/upload', { method: 'POST', body: fd })
+    .then(r => r.text())
+    .then(html => { document.open(); document.write(html); document.close(); })
+    .catch(e => alert('上載失敗: ' + e));
+}
+
+// ── Symbol Lookup / Ranking ──
+(function() {
+  var raw = document.getElementById('sym-data');
+  if (!raw) return;
+  var SYM_DATA = JSON.parse(raw.textContent);
+
+  function fmtUsd(v) {
+    var s = '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+    return v < 0 ? '-' + s : (v > 0 ? '+' + s : s);
+  }
+  function pc(v) { return v > 0 ? 'pos' : (v < 0 ? 'neg' : 'neu'); }
+  function dash(v, fn) { return v === 0 ? '—' : fn(v); }
+
+  function symTotal(d) {
+    var stk  = d.stk_open.concat(d.stk_closed).reduce(function(a,r){return a+r.eff_pnl;},0);
+    var opt  = d.opt_open.concat(d.opt_closed).reduce(function(a,r){return a+r.eff_pnl;},0);
+    var comm = d.stk_open.concat(d.stk_closed,d.opt_open,d.opt_closed).reduce(function(a,r){return a+r.comm;},0);
+    return {stk:stk, opt:opt, comm:comm, total:stk+opt+comm};
+  }
+
+  function contractBadge(c) {
+    var p = c ? c.trim().split(' ') : [];
+    if (p.length < 4) return '<span class="ticker-chip" style="font-size:10px;">' + (c||'') + '</span>';
+    var cp = p[3].toUpperCase();
+    var cpStyle = cp === 'C' ? 'background:#dcfce7;color:#166534;border:1px solid #bbddbf;' : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;';
+    return '<span class="ticker-chip" style="font-size:10px;">' + p[0] + '</span>'
+      + ' <span style="font-size:9px;font-family:\'IBM Plex Mono\',monospace;color:#5a6e5c;">' + p[1] + '</span>'
+      + ' <span style="font-size:10px;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#374840;">$' + p[2] + '</span>'
+      + ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;font-family:\'IBM Plex Mono\',monospace;font-weight:700;' + cpStyle + '">' + cp + '</span>';
+  }
+
+  var ranking = Object.keys(SYM_DATA).map(function(sym) {
+    var t = symTotal(SYM_DATA[sym]);
+    return {sym:sym, stk:t.stk, opt:t.opt, comm:t.comm, total:t.total};
+  });
+  ranking.sort(function(a,b){ return b.total - a.total; });
+  var maxAbs = ranking.reduce(function(m,r){ return Math.max(m, Math.abs(r.total)); }, 1);
+
+  var tbody = document.getElementById('sym-rank-body');
+  if (!tbody) return;
+  tbody.innerHTML = ranking.map(function(r, i) {
+    var pct   = Math.round(Math.abs(r.total) / maxAbs * 100);
+    var color = r.total >= 0 ? '#15803d' : '#dc2626';
+    var bg    = r.total >= 0 ? '#dcfce7' : '#fee2e2';
+    var bar   = '<div style="background:' + bg + ';border-radius:3px;height:8px;width:100%;">'
+              + '<div style="background:' + color + ';border-radius:3px;height:8px;width:' + pct + '%;"></div></div>';
+    return '<tr style="cursor:pointer;" onclick="showSym(' + JSON.stringify(r.sym) + ')">'
+      + '<td class="px-3 py-2.5 font-mono text-xs text-stone-400">' + (i+1) + '</td>'
+      + '<td class="px-3 py-2.5"><span class="ticker-chip">' + r.sym + '</span></td>'
+      + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.stk) + '">' + (r.stk!==0 ? fmtUsd(r.stk) : '—') + '</td>'
+      + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.opt) + '">' + (r.opt!==0 ? fmtUsd(r.opt) : '—') + '</td>'
+      + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + (r.comm!==0 ? fmtUsd(r.comm) : '—') + '</td>'
+      + '<td class="px-3 py-2.5" style="min-width:160px;">' + bar + '</td>'
+      + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(r.total) + '">' + fmtUsd(r.total) + '</td>'
+      + '</tr>';
+  }).join('');
+
+  window.showSym = function(sym) {
+    var d = SYM_DATA[sym]; if (!d) return;
+    var t = symTotal(d);
+    document.getElementById('sym-ranking-wrap').style.display = 'none';
+    document.getElementById('sym-detail-wrap').style.display  = '';
+    document.getElementById('sym-detail-title').textContent   = sym;
+    document.getElementById('sym-cards').innerHTML =
+        '<div class="metric-tile ' + (t.stk>=0?'t-pos':'t-neg') + '"><div class="metric-label">股票盈虧</div><div class="metric-value ' + pc(t.stk) + '">' + fmtUsd(t.stk) + '</div></div>'
+      + '<div class="metric-tile ' + (t.opt>=0?'t-pos':'t-neg') + '"><div class="metric-label">期權盈虧</div><div class="metric-value ' + pc(t.opt) + '">' + fmtUsd(t.opt) + '</div></div>'
+      + '<div class="metric-tile t-neg"><div class="metric-label">佣金</div><div class="metric-value ' + pc(t.comm) + '">' + fmtUsd(t.comm) + '</div></div>'
+      + '<div class="metric-tile ' + (t.total>=0?'t-pos':'t-neg') + '"><div class="metric-label">總計</div><div class="metric-value ' + pc(t.total) + '" style="font-size:20px;font-weight:700;">' + fmtUsd(t.total) + '</div></div>';
+
+    function stkRows(arr) {
+      return arr.map(function(r) {
+        return '<tr>'
+          + '<td class="px-3 py-2.5"><span class="ticker-chip">' + r.ticker + '</span></td>'
+          + '<td class="px-3 py-2.5 text-xs text-stone-500 max-w-xs truncate">' + r.name + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.qty,function(v){return ''+v;}) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.px,function(v){return '$'+v.toFixed(2);}) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.mv,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.pos_pnl) + '">' + dash(r.pos_pnl,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.trd_pnl) + '">' + dash(r.trd_pnl,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + dash(r.comm,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(r.eff_pnl) + '">' + fmtUsd(r.eff_pnl) + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+    function optRows(arr) {
+      return arr.map(function(r) {
+        var sc = r.qty>0?'badge-hold':(r.qty<0?'badge-short':'badge-closed');
+        var sl = r.qty>0?'持有':(r.qty<0?'空頭':'已平倉');
+        return '<tr>'
+          + '<td class="px-3 py-2.5">' + contractBadge(r.contract) + '</td>'
+          + '<td class="px-3 py-2.5 text-xs text-stone-500 max-w-xs truncate">' + r.desc + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.qty,function(v){return ''+v;}) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.px,function(v){return '$'+v.toFixed(4);}) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.mv,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.pos_pnl) + '">' + dash(r.pos_pnl,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.trd_pnl) + '">' + dash(r.trd_pnl,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + dash(r.comm,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(r.eff_pnl) + '">' + fmtUsd(r.eff_pnl) + '</td>'
+          + '<td class="px-3 py-2.5"><span class="badge ' + sc + '">' + sl + '</span></td>'
+          + '</tr>';
+      }).join('');
+    }
+    function setSection(wId, bId, html) {
+      var w = document.getElementById(wId), b = document.getElementById(bId);
+      if (html) { b.innerHTML = html; w.style.display = ''; } else { w.style.display = 'none'; }
+    }
+    setSection('sym-so-wrap','sym-so-body', stkRows(d.stk_open));
+    setSection('sym-sc-wrap','sym-sc-body', stkRows(d.stk_closed));
+    setSection('sym-oo-wrap','sym-oo-body', optRows(d.opt_open));
+    setSection('sym-oc-wrap','sym-oc-body', optRows(d.opt_closed));
+    var hasAny = d.stk_open.length+d.stk_closed.length+d.opt_open.length+d.opt_closed.length > 0;
+    document.getElementById('sym-empty').style.display = hasAny ? 'none' : '';
+  };
+
+  window.closeSym = function() {
+    document.getElementById('sym-detail-wrap').style.display  = 'none';
+    document.getElementById('sym-ranking-wrap').style.display = '';
+  };
+})();
+</script>
+</body>
+</html>

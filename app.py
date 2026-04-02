@@ -7,7 +7,7 @@ from flask import Flask, request, make_response
 from parser import parse_mtm_csv, parse_mtm_csv_v2
 from templates_builder import build_html
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB
 
 
