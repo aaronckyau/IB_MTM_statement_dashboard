@@ -1,0 +1,6 @@
+services:
+  ib_statement:
+    build: .
+    ports:
+      - "5020:5020"
+    restart: always
