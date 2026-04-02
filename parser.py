@@ -50,6 +50,8 @@ def parse_mtm_csv(content: str) -> dict:
         'Interest': 'INTEREST',
         'Interest Accruals': 'INTEREST_ACCRUALS',
         'Deposits & Withdrawals': 'WITHDRAWALS',
+        '存款和取款': 'WITHDRAWALS',
+        '存款和提款': 'WITHDRAWALS',
     }
 
     def sec(name):
@@ -132,6 +134,8 @@ def parse_mtm_csv(content: str) -> dict:
         '應計利息變更':'int_accruals','Change in Interest Accruals':'int_accruals',
         'Deposits & Withdrawals':'withdrawals',
     }
+    SKIP_CHG = {'開始價值','Starting Value','結束價值','Ending Value'}
+    nav_change_rows = []  # [(label, value)] in CSV order, skipping start/end
     for r in chg_rows:
         if r[1]=='Data' and len(r)>=4:
             key = CHANGE_MAP.get(r[2], r[2])
@@ -139,13 +143,52 @@ def parse_mtm_csv(content: str) -> dict:
                 nav_change[key] = safe_float(r[3])
             except:
                 pass
+            if r[2] not in SKIP_CHG:
+                try:
+                    nav_change_rows.append({'label': r[2], 'value': safe_float(r[3])})
+                except:
+                    pass
 
     # ── Positions ──
     pos_rows = sec('POSITIONS')
     stocks, options, fx = [], [], []
+    stock_details, option_details = [], []
+    # Track current summary index per symbol to correctly bind Details to their Summary
+    _cur_stk_idx = {}  # ticker -> current stock index
+    _cur_opt_idx = {}  # contract -> current option index
 
     for r in pos_rows:
-        if r[1] != 'Data' or r[2] != 'Summary': continue
+        if r[1] != 'Data': continue
+
+        # Details rows — bind to the most recent Summary of same symbol
+        if r[2] == 'Details' and len(r) >= 18:
+            asset_type = r[3]
+            if asset_type in ('股票','Stocks'):
+                sym = r[5]
+                idx = _cur_stk_idx.get(sym, 0)
+                stock_details.append({
+                    'ticker': sym, 'name': r[6], '_summary_idx': idx,
+                    'prev_qty': safe_float(r[7]), 'qty': safe_float(r[8]),
+                    'prev_px': safe_float(r[9]),  'px': safe_float(r[10]),
+                    'prev_mv': safe_float(r[11]),  'mv': safe_float(r[12]),
+                    'pos_pnl': safe_float(r[13]),  'trd_pnl': safe_float(r[14]),
+                    'comm': safe_float(r[15]),      'other': safe_float(r[16]),
+                    'total_pnl': safe_float(r[17]),
+                })
+            elif asset_type in ('股票和指數期權','Equity and Index Options'):
+                sym = r[5]
+                idx = _cur_opt_idx.get(sym, 0)
+                option_details.append({
+                    'contract': sym, 'desc': r[6], '_summary_idx': idx,
+                    'prev_qty': safe_float(r[7]), 'qty': safe_float(r[8]),
+                    'prev_px': safe_float(r[9]),  'px': safe_float(r[10]),
+                    'prev_mv': safe_float(r[11]),  'mv': safe_float(r[12]),
+                    'pos_pnl': safe_float(r[13]),  'trd_pnl': safe_float(r[14]),
+                    'comm': safe_float(r[15]),      'other': safe_float(r[16]),
+                    'total_pnl': safe_float(r[17]),
+                })
+
+        if r[2] != 'Summary': continue
         asset_type = r[3]
         # Chinese & English asset type detection
         is_stock  = asset_type in ('股票','Stocks')
@@ -160,11 +203,14 @@ def parse_mtm_csv(content: str) -> dict:
             pos_pnl = safe_float(r[13]); trd_pnl = safe_float(r[14])
             comm    = safe_float(r[15]); other   = safe_float(r[16])
             total_pnl = safe_float(r[17])
+            idx = len(stocks)
+            _cur_stk_idx[ticker] = idx
             stocks.append({'ticker':ticker,'name':name,'prev_qty':prev_qty,
                            'qty':qty,'prev_px':prev_px,'px':px,
                            'prev_mv':prev_mv,'mv':mv,
                            'pos_pnl':pos_pnl,'trd_pnl':trd_pnl,
-                           'comm':comm,'other':other,'total_pnl':total_pnl})
+                           'comm':comm,'other':other,'total_pnl':total_pnl,
+                           '_idx':idx})
 
         elif is_option and len(r) >= 18:
             contract = r[5]; desc = r[6]
@@ -174,21 +220,25 @@ def parse_mtm_csv(content: str) -> dict:
             pos_pnl = safe_float(r[13]); trd_pnl = safe_float(r[14])
             comm    = safe_float(r[15]); other   = safe_float(r[16])
             total_pnl = safe_float(r[17])
+            idx = len(options)
+            _cur_opt_idx[contract] = idx
             options.append({'contract':contract,'desc':desc,'prev_qty':prev_qty,
                             'qty':qty,'prev_px':prev_px,'px':px,
                             'prev_mv':prev_mv,'mv':mv,
                             'pos_pnl':pos_pnl,'trd_pnl':trd_pnl,
-                            'comm':comm,'other':other,'total_pnl':total_pnl})
+                            'comm':comm,'other':other,'total_pnl':total_pnl,
+                            '_idx':idx})
 
         elif is_forex and len(r) >= 18:
             ccy = r[5]
             prev_qty = safe_float(r[7]); qty = safe_float(r[8])
             prev_rate= safe_float(r[9]); rate= safe_float(r[10])
             prev_mv = safe_float(r[11]); mv  = safe_float(r[12])
+            comm      = safe_float(r[15])
             total_pnl = safe_float(r[17])
             fx.append({'ccy':ccy,'prev_qty':prev_qty,'qty':qty,
                        'prev_rate':prev_rate,'rate':rate,
-                       'prev_mv':prev_mv,'mv':mv,'total_pnl':total_pnl})
+                       'prev_mv':prev_mv,'mv':mv,'comm':comm,'total_pnl':total_pnl})
 
     # ── Dividends ──
     div_rows = sec('DIVIDENDS')
@@ -239,12 +289,49 @@ def parse_mtm_csv(content: str) -> dict:
                 interest_items.append({'currency':r[2],'date':r[3],'desc':r[4],'amount':safe_float(r[5])})
             except: pass
 
-    # ── Withdrawals (English only) ──
+    # ── Withholding detail ──
+    wh_items = []
+    for r in wh_rows:
+        if r[1]=='Data' and r[2] not in ('Total','貨幣','Currency') and len(r)>=5:
+            try:
+                wh_items.append({'currency':r[2],'date':r[3],'desc':r[4],'amount':safe_float(r[5])})
+            except: pass
+
+    # ── Dividend Accruals ──
+    # Columns: A=section, B=Data, C=資產分類, D=貨幣, E=代碼, F=日期, G=除息日, H=支付日期,
+    #          I=數量, J=稅, K=費用, L=總股息率, M=總額, N=淨額(index 13)
+    div_accr_rows = sec('DIVIDEND_ACCRUALS')
+    div_accrual_items = []
+    for r in div_accr_rows:
+        if r[1]=='Data' and r[2] not in ('總數','Total') and len(r)>=14:
+            try:
+                ticker = r[4]   # E=代碼
+                net    = safe_float(r[13])  # N=淨額
+                if ticker and ticker not in ('期初應計股息.USD','期初應計股息'):
+                    div_accrual_items.append({'ticker':ticker,'currency':r[3],'amount':net})
+            except: pass
+    div_accrual_items.sort(key=lambda x: x['ticker'])
+
+    # ── Interest Accruals ──
+    int_accr_rows = sec('INTEREST_ACCRUALS')
+    int_accrual_items = []
+    for r in int_accr_rows:
+        if r[1]=='Data' and r[2] not in ('Total','貨幣','Currency') and len(r)>=5:
+            try:
+                int_accrual_items.append({'currency':r[2],'date':r[3],'desc':r[4],'amount':safe_float(r[5])})
+            except: pass
+
+    # ── Withdrawals (Chinese + English) ──
+    # Add Chinese section name to CN map lookup
     wdr_rows = sec('WITHDRAWALS')
+    # Also try Chinese section name directly
+    cn_wdr_rows = [r for r in rows if r and r[0] in ('存款和取款','存款和提款')]
+    if cn_wdr_rows:
+        wdr_rows = cn_wdr_rows
     withdrawals = []
     for r in wdr_rows:
-        if r[1]=='Data' and r[2] not in ('Total','Total Deposits & Withdrawals in USD') and len(r)>=5:
-            if r[3] and r[4]:  # has date and desc
+        if r[1]=='Data' and r[2] not in ('Total','Total Deposits & Withdrawals in USD','貨幣','Currency') and len(r)>=5:
+            if r[3] and r[4]:
                 try:
                     withdrawals.append({'currency':r[2],'date':r[3],'desc':r[4],'amount':safe_float(r[5])})
                 except: pass
@@ -256,8 +343,11 @@ def parse_mtm_csv(content: str) -> dict:
         'nav': {'start':start_nav,'end':end_nav,'twr':twr,
                 'change': end_nav - start_nav, 'detail': nav_clean},
         'nav_change': nav_change,
+        'nav_change_rows': nav_change_rows,
         'stocks': stocks,
         'options': options,
+        'stock_details': stock_details,
+        'option_details': option_details,
         'fx': fx,
         'dividends': dividends,
         'div_total': div_total,
@@ -267,6 +357,9 @@ def parse_mtm_csv(content: str) -> dict:
         'interest_items': interest_items,
         'int_total_usd': int_total_usd,
         'withdrawals': withdrawals,
+        'wh_items': wh_items,
+        'div_accrual_items': div_accrual_items,
+        'int_accrual_items': int_accrual_items,
     }
 
 

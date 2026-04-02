@@ -173,5 +173,5 @@ def upload():
 
 if __name__ == '__main__':
     print("\n🚀 IB 結單儀表板已啟動")
-    print("   請開啟瀏覽器訪問 http://localhost:5000\n")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    print("   請開啟瀏覽器訪問 http://localhost:5002\n")
+    app.run(debug=True, host='0.0.0.0', port=5002)

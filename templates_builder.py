@@ -26,6 +26,8 @@ def build_html(data: dict) -> str:
     chg       = data['nav_change']
     stocks    = data['stocks']
     opts      = data['options']
+    stk_det   = data.get('stock_details', [])
+    opt_det   = data.get('option_details', [])
     fx        = data['fx']
     divs      = data['dividends']
     fees      = data['fees']
@@ -41,14 +43,16 @@ def build_html(data: dict) -> str:
     end_nav   = nav['end']
     nav_chg   = nav['change']
 
-    mtm   = chg.get('mtm', 0)
-    divid = chg.get('dividends', data['div_total'])
-    withh = chg.get('withholding', data['wh_total'])
-    intst = chg.get('interest', data['int_total_usd'])
-    ofees = chg.get('other_fees', data['fee_total'])
-    comms = chg.get('commissions', 0)
-    fx_tr = chg.get('fx', 0)
-    wdraw = chg.get('withdrawals', 0)
+    mtm        = chg.get('mtm', 0)
+    divid      = chg.get('dividends', data['div_total'])
+    withh      = chg.get('withholding', data['wh_total'])
+    intst      = chg.get('interest', data['int_total_usd'])
+    ofees      = chg.get('other_fees', data['fee_total'])
+    comms      = chg.get('commissions', 0)
+    fx_tr      = chg.get('fx', 0)
+    wdraw      = chg.get('withdrawals', 0)
+    div_accr   = chg.get('div_accruals', 0)
+    int_accr   = chg.get('int_accruals', 0)
 
     twr_display = twr if isinstance(twr, str) else f"{twr:.2f}%"
     nav_chg_cls = "pos" if nav_chg > 0 else ("neg" if nav_chg < 0 else "neu")
@@ -58,70 +62,174 @@ def build_html(data: dict) -> str:
     def _effective_pnl(item):
         return item['pos_pnl'] + item['trd_pnl'] if item['total_pnl'] == 0 else item['total_pnl']
 
+    # Build details lookup: (ticker/contract, summary_idx) -> [detail rows]
+    from collections import defaultdict
+    stk_det_map = defaultdict(list)
+    for d in stk_det:
+        key = (d['ticker'], d.get('_summary_idx', 0))
+        stk_det_map[key].append(d)
+    opt_det_map = defaultdict(list)
+    for d in opt_det:
+        key = (d['contract'], d.get('_summary_idx', 0))
+        opt_det_map[key].append(d)
+
+    def _contract_badge(contract):
+        parts = contract.strip().split()
+        if len(parts) < 4:
+            return f'<span class="ticker-chip" style="font-size:10px;">{contract}</span>'
+        underlying, expiry, strike, cp = parts[0], parts[1], parts[2], parts[3].upper()
+        cp_style = ('background:#dcfce7;color:#166534;border:1px solid #bbddbf;'
+                    if cp == 'C' else
+                    'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;')
+        return (
+            f'<span class="ticker-chip" style="font-size:10px;">{underlying}</span>'
+            f' <span style="font-size:9px;font-family:\'IBM Plex Mono\',monospace;color:#5a6e5c;">{expiry}</span>'
+            f' <span style="font-size:10px;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#374840;">${strike}</span>'
+            f' <span style="font-size:9px;padding:1px 5px;border-radius:3px;font-family:\'IBM Plex Mono\',monospace;font-weight:700;{cp_style}">{cp}</span>'
+        )
+
     def _stock_row(s):
         eff_pnl = _effective_pnl(s)
         pc = pnl_class(eff_pnl)
-        return f"""
-        <tr>
-          <td class="px-3 py-2.5" data-val="{s['ticker']}"><span class="ticker-chip">{s['ticker']}</span></td>
-          <td class="px-3 py-2.5 text-xs text-stone-500 max-w-[140px] truncate" data-val="{s['name']}">{s['name']}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{s['prev_qty']}">{_dash(s['prev_qty'], lambda v: f"{v:g}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{s['qty']}">{_dash(s['qty'], lambda v: f"{v:g}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{s['prev_px']}">{_dash(s['prev_px'], lambda v: f"${v:,.2f}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{s['px']}">{_dash(s['px'], lambda v: f"${v:,.2f}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{s['prev_mv']}">{_dash(s['prev_mv'], fmt_usd)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm" data-val="{s['mv']}">{_dash(s['mv'], fmt_usd)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(s['pos_pnl'])}" data-val="{s['pos_pnl']}">{_dash(s['pos_pnl'], pnl_fmt)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(s['trd_pnl'])}" data-val="{s['trd_pnl']}">{_dash(s['trd_pnl'], pnl_fmt)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {pc}" data-val="{eff_pnl}">{pnl_fmt(eff_pnl)}</td>
-        </tr>"""
+        cc = pnl_class(s['comm'])
+        tid = s['ticker'].replace(' ','_').replace('/','_').replace('.','_') + f"_{s.get('_idx',0)}"
+        details = stk_det_map.get((s['ticker'], s.get('_idx', 0)), [])
+        has_det = len(details) > 1
+        arrow = (f'<svg id="sarr-{tid}" width="10" height="10" viewBox="0 0 10 10" fill="none" '
+                 f'style="display:inline;margin-right:4px;transition:transform .2s;cursor:pointer;" '
+                 f"onclick=\"toggleDet('s{tid}',this)\">"
+                 f'<path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>') if has_det else ''
+        summary_row = (
+            f'<tr>'
+            f'<td class="px-3 py-2.5" data-val="{s["ticker"]}">{arrow}<span class="ticker-chip">{s["ticker"]}</span></td>'
+            f'<td class="px-3 py-2.5 text-xs text-stone-500 max-w-[140px] truncate" data-val="{s["name"]}">{s["name"]}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{s["prev_qty"]}">{_dash(s["prev_qty"], lambda v: f"{v:g}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{s["qty"]}">{_dash(s["qty"], lambda v: f"{v:g}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{s["prev_px"]}">{_dash(s["prev_px"], lambda v: f"${v:,.2f}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{s["px"]}">{_dash(s["px"], lambda v: f"${v:,.2f}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{s["prev_mv"]}">{_dash(s["prev_mv"], fmt_usd)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm" data-val="{s["mv"]}">{_dash(s["mv"], fmt_usd)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(s["pos_pnl"])}" data-val="{s["pos_pnl"]}">{_dash(s["pos_pnl"], pnl_fmt)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(s["trd_pnl"])}" data-val="{s["trd_pnl"]}">{_dash(s["trd_pnl"], pnl_fmt)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm {cc}" data-val="{s["comm"]}">{_dash(s["comm"], pnl_fmt)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {pc}" data-val="{eff_pnl}">{pnl_fmt(eff_pnl)}</td>'
+            f'</tr>'
+        )
+        detail_rows = ""
+        if has_det:
+            for d in details:
+                # Cash flow: buying costs money (negative), selling gains money (positive)
+                cash_flow = -d['mv']
+                cfp = pnl_class(cash_flow)
+                dcc = pnl_class(d['comm'])
+                carryover_badge = (' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;font-family:\'IBM Plex Mono\',monospace;white-space:nowrap;">持倉轉入</span>'
+                                   if d['prev_qty'] != 0 else '')
+                detail_rows += (
+                    f'<tr class="det-s{tid}" style="display:none;background:#f8fcf8;">'
+                    f'<td class="px-3 py-1.5 text-xs text-stone-400" style="padding-left:28px;">↳ {_dash(d["prev_qty"], lambda v: f"{v:g}")} → {_dash(d["qty"], lambda v: f"{v:g}")}{carryover_badge}</td>'
+                    f'<td class="px-3 py-1.5 text-xs text-stone-400"></td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{_dash(d["prev_qty"], lambda v: f"{v:g}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs">{_dash(d["qty"], lambda v: f"{v:g}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{_dash(d["prev_px"], lambda v: f"${v:,.2f}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs">{_dash(d["px"], lambda v: f"${v:,.2f}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{_dash(d["prev_mv"], fmt_usd)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs">{_dash(d["mv"], fmt_usd)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs {pnl_class(d["pos_pnl"])}">{_dash(d["pos_pnl"], pnl_fmt)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs {pnl_class(d["trd_pnl"])}">{_dash(d["trd_pnl"], pnl_fmt)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs {dcc}">{_dash(d["comm"], pnl_fmt)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs font-semibold {cfp}">{pnl_fmt(cash_flow)}</td>'
+                    f'</tr>'
+                )
+        return summary_row + detail_rows
 
     def _opt_row(o):
         eff_pnl = _effective_pnl(o)
         pc = pnl_class(eff_pnl)
+        cc = pnl_class(o['comm'])
         status = "持有" if o['qty'] != 0 else "已平倉"
         if o['qty'] < 0: status = "空頭"
         status_cls = "badge-hold" if o['qty'] > 0 else ("badge-short" if o['qty'] < 0 else "badge-closed")
-        return f"""
-        <tr>
-          <td class="px-3 py-2.5" data-val="{o['contract']}"><span class="ticker-chip" style="font-size:10px;">{o['contract']}</span></td>
-          <td class="px-3 py-2.5 text-xs text-stone-500 max-w-[160px] truncate" data-val="{o['desc']}">{o['desc']}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{o['prev_qty']}">{_dash(o['prev_qty'], lambda v: f"{v:g}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{o['qty']}">{_dash(o['qty'], lambda v: f"{v:g}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{o['prev_px']}">{_dash(o['prev_px'], lambda v: f"${v:,.4f}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{o['px']}">{_dash(o['px'], lambda v: f"${v:,.4f}")}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{o['prev_mv']}">{_dash(o['prev_mv'], fmt_usd)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm" data-val="{o['mv']}">{_dash(o['mv'], fmt_usd)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(o['pos_pnl'])}" data-val="{o['pos_pnl']}">{_dash(o['pos_pnl'], pnl_fmt)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(o['trd_pnl'])}" data-val="{o['trd_pnl']}">{_dash(o['trd_pnl'], pnl_fmt)}</td>
-          <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {pc}" data-val="{eff_pnl}">{pnl_fmt(eff_pnl)}</td>
-          <td class="px-3 py-2.5 text-right"><span class="badge {status_cls}">{status}</span></td>
-        </tr>"""
+        tid = o['contract'].replace(' ','_').replace('/','_').replace('.','_') + f"_{o.get('_idx',0)}"
+        details = opt_det_map.get((o['contract'], o.get('_idx', 0)), [])
+        has_det = len(details) > 1
+        arrow = (f'<svg id="oarr-{tid}" width="10" height="10" viewBox="0 0 10 10" fill="none" '
+                 f'style="display:inline;margin-right:4px;transition:transform .2s;cursor:pointer;" '
+                 f"onclick=\"toggleDet('o{tid}',this)\">"
+                 f'<path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>') if has_det else ''
+        summary_row = (
+            f'<tr>'
+            f'<td class="px-3 py-2.5" data-val="{o["contract"]}">{arrow}{_contract_badge(o["contract"])}</td>'
+            f'<td class="px-3 py-2.5 text-xs text-stone-500 max-w-[160px] truncate" data-val="{o["desc"]}">{o["desc"]}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{o["prev_qty"]}">{_dash(o["prev_qty"], lambda v: f"{v:g}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{o["qty"]}">{_dash(o["qty"], lambda v: f"{v:g}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{o["prev_px"]}">{_dash(o["prev_px"], lambda v: f"${v:,.4f}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm font-medium text-stone-800" data-val="{o["px"]}">{_dash(o["px"], lambda v: f"${v:,.4f}")}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400" data-val="{o["prev_mv"]}">{_dash(o["prev_mv"], fmt_usd)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm" data-val="{o["mv"]}">{_dash(o["mv"], fmt_usd)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(o["pos_pnl"])}" data-val="{o["pos_pnl"]}">{_dash(o["pos_pnl"], pnl_fmt)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm {pnl_class(o["trd_pnl"])}" data-val="{o["trd_pnl"]}">{_dash(o["trd_pnl"], pnl_fmt)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm {cc}" data-val="{o["comm"]}">{_dash(o["comm"], pnl_fmt)}</td>'
+            f'<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {pc}" data-val="{eff_pnl}">{pnl_fmt(eff_pnl)}</td>'
+            f'<td class="px-3 py-2.5 text-right"><span class="badge {status_cls}">{status}</span></td>'
+            f'</tr>'
+        )
+        detail_rows = ""
+        if has_det:
+            for d in details:
+                cash_flow = -d['mv']
+                cfp = pnl_class(cash_flow)
+                dcc = pnl_class(d['comm'])
+                carryover_badge = (' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;font-family:\'IBM Plex Mono\',monospace;white-space:nowrap;">持倉轉入</span>'
+                                   if d['prev_qty'] != 0 else '')
+                detail_rows += (
+                    f'<tr class="det-o{tid}" style="display:none;background:#f8fcf8;">'
+                    f'<td class="px-3 py-1.5" style="padding-left:28px;">↳ <span style="font-size:10px;color:#8a9e8c;font-family:\'IBM Plex Mono\',monospace;">{_dash(d["prev_qty"], lambda v: f"{v:g}")} → {_dash(d["qty"], lambda v: f"{v:g}")}</span>{carryover_badge} {_contract_badge(d["contract"])}</td>'
+                    f'<td class="px-3 py-1.5 text-xs text-stone-400"></td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{_dash(d["prev_qty"], lambda v: f"{v:g}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs">{_dash(d["qty"], lambda v: f"{v:g}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{_dash(d["prev_px"], lambda v: f"${v:,.4f}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs">{_dash(d["px"], lambda v: f"${v:,.4f}")}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs text-stone-300">{_dash(d["prev_mv"], fmt_usd)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs">{_dash(d["mv"], fmt_usd)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs {pnl_class(d["pos_pnl"])}">{_dash(d["pos_pnl"], pnl_fmt)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs {pnl_class(d["trd_pnl"])}">{_dash(d["trd_pnl"], pnl_fmt)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs {dcc}">{_dash(d["comm"], pnl_fmt)}</td>'
+                    f'<td class="px-3 py-1.5 text-right font-mono text-xs font-semibold {cfp}">{pnl_fmt(cash_flow)}</td>'
+                    f'<td></td>'
+                    f'</tr>'
+                )
+        return summary_row + detail_rows
 
     # ── Split open / closed ──
     stocks_open   = sorted([s for s in stocks if s['qty'] != 0],  key=lambda x: abs(_effective_pnl(x)), reverse=True)
     stocks_closed = sorted([s for s in stocks if s['qty'] == 0],  key=lambda x: abs(_effective_pnl(x)), reverse=True)
     opts_open     = sorted([o for o in opts   if o['qty'] != 0],  key=lambda x: abs(_effective_pnl(x)), reverse=True)
     opts_closed   = sorted([o for o in opts   if o['qty'] == 0],  key=lambda x: abs(_effective_pnl(x)), reverse=True)
+    stk_open_pnl   = sum(_effective_pnl(s) for s in stocks_open)
+    stk_closed_pnl = sum(_effective_pnl(s) for s in stocks_closed)
+    opt_open_pnl   = sum(_effective_pnl(o) for o in opts_open)
+    opt_closed_pnl = sum(_effective_pnl(o) for o in opts_closed)
 
     stock_open_rows   = "".join(_stock_row(s) for s in stocks_open)
     stock_closed_rows = "".join(_stock_row(s) for s in stocks_closed)
     opt_open_rows     = "".join(_opt_row(o)   for o in opts_open)
     opt_closed_rows   = "".join(_opt_row(o)   for o in opts_closed)
 
-    def _total_row(group, cols=11):
+    def _total_row(group, cols=12):
         """Generate a totals footer row for a group of stock/option items."""
         if not group: return ""
         t_prev_mv  = sum(s['prev_mv']            for s in group)
         t_mv       = sum(s['mv']                 for s in group)
         t_pos_pnl  = sum(s['pos_pnl']            for s in group)
         t_trd_pnl  = sum(s['trd_pnl']            for s in group)
+        t_comm     = sum(s['comm']               for s in group)
         t_eff_pnl  = sum(_effective_pnl(s)       for s in group)
         pc = pnl_class(t_eff_pnl)
         pp = pnl_class(t_pos_pnl)
         tp = pnl_class(t_trd_pnl)
-        # cols=11 for stock (no status), cols=12 for option (has status)
-        status_td = '<td class="px-3 py-2.5"></td>' if cols == 12 else ''
+        cp = pnl_class(t_comm)
+        # cols=12 for stock (no status), cols=13 for option (has status)
+        status_td = '<td class="px-3 py-2.5"></td>' if cols == 13 else ''
         return f"""<tr class="total-row">
           <td class="px-3 py-2.5 text-xs font-semibold text-stone-500" colspan="2">合計 ({len(group)} 個)</td>
           <td class="px-3 py-2.5"></td>
@@ -132,14 +240,15 @@ def build_html(data: dict) -> str:
           <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold text-stone-700">{fmt_usd(t_mv)}</td>
           <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {pp}">{pnl_fmt(t_pos_pnl)}</td>
           <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {tp}">{pnl_fmt(t_trd_pnl)}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {cp}">{pnl_fmt(t_comm)}</td>
           <td class="px-3 py-2.5 text-right font-mono text-sm font-bold {pc}">{pnl_fmt(t_eff_pnl)}</td>
           {status_td}
         </tr>"""
 
-    stock_open_total   = _total_row(stocks_open,   cols=11)
-    stock_closed_total = _total_row(stocks_closed, cols=11)
-    opt_open_total     = _total_row(opts_open,     cols=12)
-    opt_closed_total   = _total_row(opts_closed,   cols=12)
+    stock_open_total   = _total_row(stocks_open,   cols=12)
+    stock_closed_total = _total_row(stocks_closed, cols=12)
+    opt_open_total     = _total_row(opts_open,     cols=13)
+    opt_closed_total   = _total_row(opts_closed,   cols=13)
 
     # ────────────────────────────────────────────
     # FX ROWS — all columns
@@ -218,55 +327,153 @@ def build_html(data: dict) -> str:
         </tr>"""
 
     # ────────────────────────────────────────────
+    # NEW PANEL DATA PREP
+    # ────────────────────────────────────────────
+    wh_items      = data.get('wh_items', [])
+    div_accr_items = data.get('div_accrual_items', [])
+    int_accr_items = data.get('int_accrual_items', [])
+
+    def _detail_row(item):
+        pc = pnl_class(item['amount'])
+        return (f'<tr><td class="px-3 py-2.5 font-mono text-xs text-stone-500">{item["date"]}</td>'
+                f'<td class="px-3 py-2.5"><span class="badge badge-ccy">{item["currency"]}</span></td>'
+                f'<td class="px-3 py-2.5 text-sm text-stone-600">{item["desc"]}</td>'
+                f'<td class="px-3 py-2.5 text-right font-mono text-sm {pc} font-medium">{pnl_fmt(item["amount"])}</td></tr>')
+
+    def _div_accr_row(item):
+        pc = pnl_class(item['amount'])
+        return (f'<tr><td class="px-3 py-2.5 font-mono text-sm font-medium">{item["ticker"]}</td>'
+                f'<td class="px-3 py-2.5"><span class="badge badge-ccy">{item["currency"]}</span></td>'
+                f'<td class="px-3 py-2.5 text-right font-mono text-sm {pc} font-medium">{pnl_fmt(item["amount"])}</td></tr>')
+
+    wh_rows_html       = "".join(_detail_row(i) for i in wh_items)
+    div_accr_rows_html = "".join(_div_accr_row(i) for i in div_accr_items)
+    int_accr_rows_html = "".join(_detail_row(i) for i in int_accr_items)
+    wh_total_val       = sum(i['amount'] for i in wh_items) or data.get('wh_total', 0)
+
+    # Commission rows from stocks + options + fx comm column
+    # Group by symbol, support expandable rows when multiple entries exist
+    from collections import defaultdict
+    comm_groups = defaultdict(list)
+    for s in stocks:
+        if s['comm'] != 0:
+            comm_groups[s['ticker']].append({'name': s['name'], 'amount': s['comm']})
+    for o in opts:
+        if o['comm'] != 0:
+            comm_groups[o['contract']].append({'name': o['desc'], 'amount': o['comm']})
+    for f in fx:
+        if f.get('comm', 0) != 0:
+            comm_groups[f['ccy']].append({'name': f['ccy'], 'amount': f['comm']})
+
+    comm_rows_html = ""
+    comm_total_val = 0
+    for sym in sorted(comm_groups.keys()):
+        entries = comm_groups[sym]
+        total_c = sum(e['amount'] for e in entries)
+        comm_total_val += total_c
+        pc = pnl_class(total_c)
+        if len(entries) == 1:
+            comm_rows_html += (
+                f'<tr><td class="px-3 py-2.5 font-mono text-sm font-medium">{sym}</td>'
+                f'<td class="px-3 py-2.5 text-sm text-stone-500">{entries[0]["name"]}</td>'
+                f'<td class="px-3 py-2.5 text-right font-mono text-sm {pc} font-medium">{pnl_fmt(total_c)}</td></tr>'
+            )
+        else:
+            uid = sym.replace(" ","_").replace("/","_")
+            comm_rows_html += (
+                f"<tr class='comm-group-header' onclick=\"toggleComm('{uid}')\" style='cursor:pointer;'>"
+                f'<td class="px-3 py-2.5 font-mono text-sm font-medium">'
+                f'<svg id="arr-{uid}" width="10" height="10" viewBox="0 0 10 10" fill="none" style="display:inline;margin-right:5px;transition:transform .2s;">'
+                f'<path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                f'{sym}</td>'
+                f'<td class="px-3 py-2.5 text-sm text-stone-400">{len(entries)} 筆</td>'
+                f'<td class="px-3 py-2.5 text-right font-mono text-sm {pc} font-medium">{pnl_fmt(total_c)}</td></tr>'
+            )
+            for e in entries:
+                epc = pnl_class(e['amount'])
+                comm_rows_html += (
+                    f'<tr class="comm-child-{uid}" style="display:none;background:#fafcfa;">'
+                    f'<td class="px-3 py-2 text-xs text-stone-400" style="padding-left:28px;">— {e["name"]}</td>'
+                    f'<td></td>'
+                    f'<td class="px-3 py-2 text-right font-mono text-xs {epc}">{pnl_fmt(e["amount"])}</td></tr>'
+                )
+
+    # ────────────────────────────────────────────
     # RECONCILIATION BREAKDOWN
-    # Replace single MTM line with per-source breakdown
+    # Use nav_change_rows from parser (CSV order, original labels)
     # ────────────────────────────────────────────
 
-    # Position P&L subtotals (computed from parsed rows)
-    stk_open_pnl   = sum(_effective_pnl(s) for s in stocks_open)
-    stk_closed_pnl = sum(_effective_pnl(s) for s in stocks_closed)
-    opt_open_pnl   = sum(_effective_pnl(o) for o in opts_open)
-    opt_closed_pnl = sum(_effective_pnl(o) for o in opts_closed)
-    pos_total      = stk_open_pnl + stk_closed_pnl + opt_open_pnl + opt_closed_pnl
+    # Map CSV label → tab_id (for hyperlinks); special 'mtm' = expandable
+    CHG_TAB = {
+        # Chinese labels
+        '按市值計價':     'mtm',
+        '存款和取款':     'tab-withdrawals',
+        '股息':           'tab-dividends',
+        '代扣稅款':       'tab-withholding',
+        '應計股息的變化': 'tab-div-accruals',
+        '利息':           'tab-interest',
+        '應計利息變更':   'tab-int-accruals',
+        '其它費用':       'tab-fees',
+        '佣金':           'tab-commissions',
+        # English labels
+        'Mark-to-Market':              'mtm',
+        'Deposits & Withdrawals':      'tab-withdrawals',
+        'Dividends':                   'tab-dividends',
+        'Withholding Tax':             'tab-withholding',
+        'Change in Dividend Accruals': 'tab-div-accruals',
+        'Interest':                    'tab-interest',
+        'Change in Interest Accruals': 'tab-int-accruals',
+        'Other Fees':                  'tab-fees',
+        'Commissions':                 'tab-commissions',
+    }
 
-    # Remainder = nav_chg minus all identifiable items
-    # IB's MTM figure already covers positions + fx; we replace it with detail
-    # Keep fx_tr, divid, withh, intst, ofees, comms, wdraw as-is
-    other_items_sum = divid + withh + intst + ofees + comms + fx_tr + wdraw
-    # If position totals differ from MTM (rounding / accruals), capture residual
-    residual = round(nav_chg - pos_total - other_items_sum, 2)
-
+    raw_rows = data.get('nav_change_rows', [])
     recon_items = []
-    if stk_open_pnl   != 0: recon_items.append(("股票持倉盈虧",   stk_open_pnl,   False))
-    if stk_closed_pnl != 0: recon_items.append(("股票平倉盈虧",   stk_closed_pnl, False))
-    if opt_open_pnl   != 0: recon_items.append(("期權持倉盈虧",   opt_open_pnl,   False))
-    if opt_closed_pnl != 0: recon_items.append(("期權平倉盈虧",   opt_closed_pnl, False))
-    if divid          != 0: recon_items.append(("股息收入",        divid,          False))
-    if withh          != 0: recon_items.append(("代扣稅",          withh,          False))
-    if intst          != 0: recon_items.append(("利息（淨）",      intst,          False))
-    if ofees          != 0: recon_items.append(("行情數據費",      ofees,          False))
-    if comms          != 0: recon_items.append(("佣金",            comms,          False))
-    if fx_tr          != 0: recon_items.append(("外匯換算損益",    fx_tr,          False))
-    if wdraw          != 0: recon_items.append(("存提款",          wdraw,          False))
-    if abs(residual)  > 0.005: recon_items.append(("其他調整",     residual,       False))
+    for row in raw_rows:
+        lbl = row['label']
+        val = row['value']
+        if val == 0:
+            continue
+        tab_id = CHG_TAB.get(lbl)
+        is_mtm = (tab_id == 'mtm')
+        recon_items.append((lbl, val, False, tab_id, is_mtm))
 
     # recon_total must equal nav_chg
-    recon_total = sum(v for _, v, _ in recon_items)
+    recon_total = sum(v for _, v, _, __, ___ in recon_items)
+    chg_items = [(l, v, False) for l, v, _, __, ___ in recon_items]
 
-    def _recon_row(label, val, is_sub=False):
+    def _recon_row(label, val, is_sub, tab_id, is_mtm):
         pc = pnl_class(val)
-        indent = "padding-left:28px;" if is_sub else ""
         lbl_cls = "text-xs text-stone-400" if is_sub else "text-sm text-stone-600"
-        return f"""
-        <div class="summary-item" style="{indent}">
-          <span class="{lbl_cls}">{label}</span>
-          <span class="font-mono text-sm font-medium {pc}">{pnl_fmt(val)}</span>
-        </div>"""
+        if is_mtm:
+            return (
+                '<div class="summary-item recon-expandable" onclick="toggleMtm(this)" style="cursor:pointer;">' +
+                f'<span class="{lbl_cls}" style="display:flex;align-items:center;gap:6px;">' +
+                '<svg class="mtm-arrow" width="10" height="10" viewBox="0 0 10 10" fill="none" style="transition:transform .2s;flex-shrink:0;">' +
+                '<path d="M2 3.5l3 3 3-3" stroke="#5a6e5c" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                f'{label}</span>' +
+                f'<span class="font-mono text-sm font-medium {pc}">{pnl_fmt(val)}</span></div>' +
+                '<div class="mtm-children" style="display:none;">' +
+                f'<div class="summary-item" style="padding-left:24px;"><a onclick="showMain(\'mtm\',null);event.stopPropagation();" href="#" class="recon-link">股票持倉</a><span class="font-mono text-sm {pnl_class(stk_open_pnl)}">{pnl_fmt(stk_open_pnl)}</span></div>' +
+                f'<div class="summary-item" style="padding-left:24px;"><a onclick="showMain(\'mtm\',null);event.stopPropagation();" href="#" class="recon-link">股票平倉</a><span class="font-mono text-sm {pnl_class(stk_closed_pnl)}">{pnl_fmt(stk_closed_pnl)}</span></div>' +
+                f'<div class="summary-item" style="padding-left:24px;"><a onclick="showMain(\'mtm\',null);event.stopPropagation();" href="#" class="recon-link">期權持倉</a><span class="font-mono text-sm {pnl_class(opt_open_pnl)}">{pnl_fmt(opt_open_pnl)}</span></div>' +
+                f'<div class="summary-item" style="padding-left:24px;"><a onclick="showMain(\'mtm\',null);event.stopPropagation();" href="#" class="recon-link">期權平倉</a><span class="font-mono text-sm {pnl_class(opt_closed_pnl)}">{pnl_fmt(opt_closed_pnl)}</span></div></div>'
+            )
+        elif tab_id:
+            onclick_attr = "showMain('"+tab_id+"',null)"
+            return (
+                '<div class="summary-item">'
+                f'<a onclick="{onclick_attr}" href="#" class="recon-link">{label}</a>'
+                f'<span class="font-mono text-sm font-medium {pc}">{pnl_fmt(val)}</span></div>'
+            )
+        else:
+            return (
+                f'<div class="summary-item">' +
+                f'<span class="{lbl_cls}">{label}</span>' +
+                f'<span class="font-mono text-sm font-medium {pc}">{pnl_fmt(val)}</span></div>'
+            )
 
-    chg_rows_html = "".join(_recon_row(l, v, s) for l, v, s in recon_items)
-
-    # Keep original chg_items for chart (position totals replace MTM)
-    chg_items = recon_items
+    chg_rows_html = "".join(_recon_row(l, v, s, tid, mtm) for l, v, s, tid, mtm in recon_items)
 
     # ────────────────────────────────────────────
     # CHART DATA
@@ -279,13 +486,19 @@ def build_html(data: dict) -> str:
             chart_colors.append('#15803d' if val > 0 else '#dc2626')
 
     import json
-    chart_data_js  = json.dumps({'labels': chart_labels, 'values': chart_values, 'colors': chart_colors})
+    def _safe_js(obj):
+        # Replace </ to prevent </script> injection; also escape < in strings
+        s = json.dumps(obj, ensure_ascii=False)
+        s = s.replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
+        return s
+    chart_data_js  = _safe_js({'labels': chart_labels, 'values': chart_values, 'colors': chart_colors})
     top_stocks     = sorted(stocks, key=lambda x: abs(_effective_pnl(x)), reverse=True)[:12]
-    stock_chart_js = json.dumps({
+    stock_chart_js = _safe_js({
         'labels': [s['ticker'] for s in top_stocks],
         'values': [round(_effective_pnl(s), 2) for s in top_stocks],
         'colors': ['#15803d' if _effective_pnl(s) >= 0 else '#dc2626' for s in top_stocks],
     })
+
 
     # ────────────────────────────────────────────
     # NAV detail breakdown (from nav['detail'])
@@ -312,11 +525,14 @@ def build_html(data: dict) -> str:
           <td class="px-3 py-2.5 text-right font-mono text-sm {pc}">{pnl_fmt(change)}</td>
         </tr>"""
 
-    # FX tab button
-    fx_nav_btn = "<button class='nav-btn' onclick=\"showMain('fx',this)\">外匯</button>" if fx else ""
+    # Legacy vars
+    fx_nav_btn = ""
+    wdr_tab = ""
 
-    # Income tab — show withdrawals tab only if data exists
-    wdr_tab = "<button class='nav-btn' onclick=\"showMain('withdrawals',this)\">存提款</button>" if wdrs else ""
+    # Conditional tab buttons (no backslash in f-string)
+    _wdr_btn     = "<button class=\"nav-btn\" onclick=\"showMain('tab-withdrawals',this)\">存款和取款</button>" if wdrs else ""
+    _divaccr_btn = "<button class=\"nav-btn\" onclick=\"showMain('tab-div-accruals',this)\">應計股息的變化</button>" if div_accr_items else ""
+    _intaccr_btn = "<button class=\"nav-btn\" onclick=\"showMain('tab-int-accruals',this)\">應計利息變更</button>" if int_accr_items else ""
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-Hant">
@@ -601,6 +817,9 @@ tailwind.config = {{
     border-bottom: 1px solid #eef5ee;
   }}
   .summary-item:last-child {{ border-bottom: none; }}
+  .recon-link {{ color:#166534;text-decoration:none;font-size:13px; }}
+  .recon-link:hover {{ text-decoration:underline; }}
+  .recon-expandable:hover {{ background:#f6fbf6; }}
   .summary-total {{
     display: flex;
     align-items: center;
@@ -756,13 +975,15 @@ tailwind.config = {{
 <!-- ── TAB BAR ── -->
 <div class="tab-bar">
   <button class="nav-btn active" onclick="showMain('overview',this)">總覽</button>
-  <button class="nav-btn" onclick="showMain('nav-detail',this)">資產結構</button>
-  <button class="nav-btn" onclick="showMain('stocks',this)">股票持倉</button>
-  <button class="nav-btn" onclick="showMain('options',this)">期權持倉</button>
-  {fx_nav_btn}
-  <button class="nav-btn" onclick="showMain('income',this)">股息 / 利息</button>
-  <button class="nav-btn" onclick="showMain('fees',this)">費用</button>
-  {wdr_tab}
+  <button class="nav-btn" onclick="showMain('mtm',this)">按市值計價</button>
+  {_wdr_btn}
+  <button class="nav-btn" onclick="showMain('tab-dividends',this)">股息</button>
+  <button class="nav-btn" onclick="showMain('tab-withholding',this)">代扣稅款</button>
+  {_divaccr_btn}
+  <button class="nav-btn" onclick="showMain('tab-interest',this)">利息</button>
+  {_intaccr_btn}
+  <button class="nav-btn" onclick="showMain('tab-fees',this)">其它費用</button>
+  <button class="nav-btn" onclick="showMain('tab-commissions',this)">佣金</button>
 </div>
 
 <!-- ══════════ OVERVIEW ══════════ -->
@@ -772,11 +993,12 @@ tailwind.config = {{
       <div class="data-card-header">
         <span class="card-title">淨資產值變動明細</span>
       </div>
-      {chg_rows_html if chg_rows_html else '<div class="empty-state">無資料</div>'}
       <div class="summary-total">
         <span style="font-size:12px;font-weight:600;color:#374840;">淨變動合計</span>
         <span class="font-mono" style="font-size:14px;font-weight:600;color:{'#15803d' if nav_chg>=0 else '#b91c1c'}">{pnl_fmt(nav_chg)}</span>
       </div>
+      <div style="border-bottom:1px solid #e8f0e8;"></div>
+      {chg_rows_html if chg_rows_html else '<div class="empty-state">無資料</div>'}
     </div>
     <div class="data-card">
       <div class="data-card-header"><span class="card-title">盈虧來源分析</span></div>
@@ -789,245 +1011,217 @@ tailwind.config = {{
   </div>
 </div>
 
-<!-- ══════════ NAV DETAIL ══════════ -->
-<div id="main-nav-detail" class="main-panel hidden">
-  <div class="data-card">
-    <div class="data-card-header">
-      <span class="card-title">各類資產 NAV 明細</span>
-      <span class="card-badge">{period}</span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead>
-          <tr class="table-head-row">
-            <th class="th-l">資產類別</th>
-            <th class="th-r">期初值</th>
-            <th class="th-r">期末值</th>
-            <th class="th-r">期間變動</th>
-          </tr>
-        </thead>
-        <tbody>
-          {nav_detail_rows if nav_detail_rows else '<tr><td colspan="4" class="empty-state">無 NAV 明細</td></tr>'}
-          <tr style="border-top:2px solid #d4e4d4;background:#f6fbf6;">
-            <td class="px-3 py-2.5 text-sm font-semibold text-stone-700">合計</td>
-            <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold text-stone-700">{fmt_usd(start_nav)}</td>
-            <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold text-stone-700">{fmt_usd(end_nav)}</td>
-            <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {nav_chg_cls}">{pnl_fmt(nav_chg)}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════ STOCKS ══════════ -->
-<div id="main-stocks" class="main-panel hidden">
-
-  <!-- 持倉中 -->
+<!-- ══════════ 按市值計價 ══════════ -->
+<div id="main-mtm" class="main-panel hidden">
   <div class="data-card" style="margin-bottom:16px;">
-    <div class="data-card-header">
-      <span class="card-title">股票持倉</span>
-      <span class="card-badge">{len(stocks_open)} 個代碼</span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="sortable-table" id="tbl-stock-open">
-        <thead>
-          <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
-            <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">代碼 <span class="sort-icon">↕</span></th>
-            <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">名稱 <span class="sort-icon">↕</span></th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉數量</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉 / 交易盈虧</th>
-            <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
-          </tr>
-          <tr class="table-head-row">
-            <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
-          </tr>
-        </thead>
-        <tbody>{stock_open_rows if stock_open_rows else '<tr><td colspan="11" class="empty-state">無持倉股票</td></tr>'}{stock_open_total}</tbody>
-      </table>
-    </div>
+    <div class="data-card-header" id="mtm-stk-open"><span class="card-title">股票持倉</span><span class="card-badge">{len(stocks_open)} 個代碼</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-stock-open">
+      <thead>
+        <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
+          <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">代碼 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">名稱 <span class="sort-icon">↕</span></th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉數量</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉 / 交易盈虧</th>
+          <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">佣金 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="11" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
+        </tr>
+        <tr class="table-head-row">
+          <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody>{stock_open_rows if stock_open_rows else '<tr><td colspan="12" class="empty-state">無持倉股票</td></tr>'}{stock_open_total}</tbody>
+    </table></div>
   </div>
-
-  <!-- 平倉 -->
-  <div class="data-card">
-    <div class="data-card-header">
-      <span class="card-title">股票平倉</span>
-      <span class="card-badge" style="background:#f1f5f1;color:#8a9e8c;border-color:#d4e4d4;">{len(stocks_closed)} 個代碼</span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="sortable-table" id="tbl-stock-closed">
-        <thead>
-          <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
-            <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">代碼 <span class="sort-icon">↕</span></th>
-            <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">名稱 <span class="sort-icon">↕</span></th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉數量</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉 / 交易盈虧</th>
-            <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
-          </tr>
-          <tr class="table-head-row">
-            <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
-          </tr>
-        </thead>
-        <tbody>{stock_closed_rows if stock_closed_rows else '<tr><td colspan="11" class="empty-state">無平倉股票</td></tr>'}{stock_closed_total}</tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════ OPTIONS ══════════ -->
-<div id="main-options" class="main-panel hidden">
-
-  <!-- 持倉中 -->
   <div class="data-card" style="margin-bottom:16px;">
-    <div class="data-card-header">
-      <span class="card-title">期權持倉</span>
-      <span class="card-badge">{len(opts_open)} 張合約</span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="sortable-table" id="tbl-opt-open">
-        <thead>
-          <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
-            <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">合約 <span class="sort-icon">↕</span></th>
-            <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">描述 <span class="sort-icon">↕</span></th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">數量</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">盈虧</th>
-            <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
-            <th class="th-group" rowspan="2" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">狀態</th>
-          </tr>
-          <tr class="table-head-row">
-            <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
-          </tr>
-        </thead>
-        <tbody>{opt_open_rows if opt_open_rows else '<tr><td colspan="12" class="empty-state">無持倉期權</td></tr>'}{opt_open_total}</tbody>
-      </table>
-    </div>
+    <div class="data-card-header" id="mtm-stk-closed"><span class="card-title">股票平倉</span><span class="card-badge" style="background:#f1f5f1;color:#8a9e8c;border-color:#d4e4d4;">{len(stocks_closed)} 個代碼</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-stock-closed">
+      <thead>
+        <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
+          <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">代碼 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">名稱 <span class="sort-icon">↕</span></th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉數量</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">持倉 / 交易盈虧</th>
+          <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">佣金 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="11" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
+        </tr>
+        <tr class="table-head-row">
+          <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody>{stock_closed_rows if stock_closed_rows else '<tr><td colspan="12" class="empty-state">無平倉股票</td></tr>'}{stock_closed_total}</tbody>
+    </table></div>
   </div>
-
-  <!-- 平倉 -->
+  <div class="data-card" style="margin-bottom:16px;">
+    <div class="data-card-header" id="mtm-opt-open"><span class="card-title">期權持倉</span><span class="card-badge">{len(opts_open)} 張合約</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-opt-open">
+      <thead>
+        <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
+          <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">合約 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">描述 <span class="sort-icon">↕</span></th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">數量</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">盈虧</th>
+          <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">佣金 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="11" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
+        </tr>
+        <tr class="table-head-row">
+          <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody>{opt_open_rows if opt_open_rows else '<tr><td colspan="13" class="empty-state">無持倉期權</td></tr>'}{opt_open_total}</tbody>
+    </table></div>
+  </div>
   <div class="data-card">
-    <div class="data-card-header">
-      <span class="card-title">期權平倉</span>
-      <span class="card-badge" style="background:#f1f5f1;color:#8a9e8c;border-color:#d4e4d4;">{len(opts_closed)} 張合約</span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="sortable-table" id="tbl-opt-closed">
-        <thead>
-          <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
-            <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">合約 <span class="sort-icon">↕</span></th>
-            <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">描述 <span class="sort-icon">↕</span></th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">數量</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
-            <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">盈虧</th>
-            <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
-            <th class="th-group" rowspan="2" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">狀態</th>
-          </tr>
-          <tr class="table-head-row">
-            <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
-            <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
-            <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
-          </tr>
-        </thead>
-        <tbody>{opt_closed_rows if opt_closed_rows else '<tr><td colspan="12" class="empty-state">無平倉期權</td></tr>'}{opt_closed_total}</tbody>
-      </table>
-    </div>
+    <div class="data-card-header" id="mtm-opt-closed"><span class="card-title">期權平倉</span><span class="card-badge" style="background:#f1f5f1;color:#8a9e8c;border-color:#d4e4d4;">{len(opts_closed)} 張合約</span></div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-opt-closed">
+      <thead>
+        <tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;">
+          <th class="th-group sortable" rowspan="2" data-col="0" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">合約 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="1" data-type="str" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">描述 <span class="sort-icon">↕</span></th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">數量</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">價格</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">市值</th>
+          <th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">盈虧</th>
+          <th class="th-group sortable" rowspan="2" data-col="10" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">佣金 <span class="sort-icon">↕</span></th>
+          <th class="th-group sortable" rowspan="2" data-col="11" data-type="num" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧 <span class="sort-icon">↕</span></th>
+        </tr>
+        <tr class="table-head-row">
+          <th class="th-r col-sep sortable" data-col="2" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="3" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="4" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="5" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="6" data-type="num" style="font-size:9px;color:#a8b8a8;">期初 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="7" data-type="num">期末 <span class="sort-icon">↕</span></th>
+          <th class="th-r col-sep sortable" data-col="8" data-type="num" style="font-size:9px;color:#a8b8a8;">持倉 <span class="sort-icon">↕</span></th>
+          <th class="th-r sortable" data-col="9" data-type="num">交易 <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody>{opt_closed_rows if opt_closed_rows else '<tr><td colspan="13" class="empty-state">無平倉期權</td></tr>'}{opt_closed_total}</tbody>
+    </table></div>
   </div>
 </div>
 
-<!-- ══════════ FX ══════════ -->
-{'<div id="main-fx" class="main-panel hidden"><div class="data-card"><div class="data-card-header"><span class="card-title">外匯持倉明細</span><span class="card-badge">' + str(len(fx)) + ' 種貨幣</span></div><div style="overflow-x:auto;"><table><thead><tr style="background:#f6fbf6;border-bottom:1px solid #e8f0e8;"><th class="th-group" rowspan="2" style="text-align:left;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;">貨幣</th><th class="th-group" colspan="3" style="border-left:1px solid #e8f0e8;">持有數量</th><th class="th-group" colspan="2" style="border-left:1px solid #e8f0e8;">匯率</th><th class="th-group" colspan="3" style="border-left:1px solid #e8f0e8;">市值 (USD)</th><th class="th-group" rowspan="2" style="text-align:right;vertical-align:bottom;padding:9px 12px;border-bottom:2px solid #e8f0e8;border-left:1px solid #e8f0e8;">總盈虧</th></tr><tr class="table-head-row"><th class="th-r col-sep" style="font-size:9px;color:#a8b8a8;">期初</th><th class="th-r">期末</th><th class="th-r">變動</th><th class="th-r col-sep" style="font-size:9px;color:#a8b8a8;">期初</th><th class="th-r">期末</th><th class="th-r col-sep" style="font-size:9px;color:#a8b8a8;">期初</th><th class="th-r">期末</th><th class="th-r">變動</th></tr></thead><tbody>' + fx_rows + '</tbody></table></div></div></div>' if fx else ''}
-
-<!-- ══════════ INCOME ══════════ -->
-<div id="main-income" class="main-panel hidden">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-    <div class="data-card">
-      <div class="data-card-header">
-        <span class="card-title">股息收入</span>
-        <span class="card-badge">+{fmt_usd(divid)}</span>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead><tr class="table-head-row">
-            <th class="th-l">日期</th><th class="th-l">幣別</th>
-            <th class="th-l">描述</th><th class="th-r">金額</th>
-          </tr></thead>
-          <tbody>{div_rows_html if div_rows_html else '<tr><td colspan="4" class="empty-state">無股息記錄</td></tr>'}</tbody>
-        </table>
-      </div>
-      {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono pos" style="font-size:13px;font-weight:600;">+' + fmt_usd(divid) + '</span></div>' if divs else ''}
-    </div>
-    <div class="data-card">
-      <div class="data-card-header">
-        <span class="card-title">利息明細</span>
-        <span class="card-badge {'card-badge-red' if intst < 0 else ''}">{pnl_fmt(intst)} USD</span>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead><tr class="table-head-row">
-            <th class="th-l">日期</th><th class="th-l">幣別</th>
-            <th class="th-l">描述</th><th class="th-r">金額</th>
-          </tr></thead>
-          <tbody>{int_rows_html if int_rows_html else '<tr><td colspan="4" class="empty-state">無利息記錄</td></tr>'}</tbody>
-        </table>
-      </div>
-      {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono ' + pnl_class(intst) + '" style="font-size:13px;font-weight:600;">' + pnl_fmt(intst) + '</span></div>' if int_items else ''}
-    </div>
+<!-- ══════════ 存款和取款 ══════════ -->
+<div id="main-tab-withdrawals" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">存款和取款</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead>
+    <tbody>{wdr_rows_html if wdr_rows_html else '<tr><td colspan="4" class="empty-state">無存款和取款記錄</td></tr>'}</tbody></table></div>
+    {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono ' + pnl_class(sum(w["amount"] for w in wdrs)) + '" style="font-size:13px;font-weight:600;">' + pnl_fmt(sum(w["amount"] for w in wdrs)) + '</span></div>' if wdrs else ''}
   </div>
 </div>
 
-<!-- ══════════ FEES ══════════ -->
-<div id="main-fees" class="main-panel hidden">
+<!-- ══════════ 股息 ══════════ -->
+<div id="main-tab-dividends" class="main-panel hidden">
   <div class="data-card">
-    <div class="data-card-header">
-      <span class="card-title">費用明細</span>
-      <span class="card-badge card-badge-red">{pnl_fmt(ofees + comms)} USD</span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead><tr class="table-head-row">
-          <th class="th-l">日期</th><th class="th-l">描述</th><th class="th-r">金額</th>
-        </tr></thead>
-        <tbody>{fee_rows_html if fee_rows_html else '<tr><td colspan="3" class="empty-state">無費用記錄</td></tr>'}</tbody>
-      </table>
-    </div>
+    <div class="data-card-header"><span class="card-title">股息收入</span><span class="card-badge">+{fmt_usd(divid)}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead>
+    <tbody>{div_rows_html if div_rows_html else '<tr><td colspan="4" class="empty-state">無股息記錄</td></tr>'}</tbody></table></div>
+    {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono pos" style="font-size:13px;font-weight:600;">+' + fmt_usd(divid) + '</span></div>' if divs else ''}
+  </div>
+</div>
+
+<!-- ══════════ 代扣稅款 ══════════ -->
+<div id="main-tab-withholding" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">代扣稅款</span><span class="card-badge card-badge-red">{pnl_fmt(wh_total_val)}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead>
+    <tbody>{wh_rows_html if wh_rows_html else '<tr><td colspan="4" class="empty-state">無代扣稅記錄</td></tr>'}</tbody></table></div>
+  </div>
+</div>
+
+<!-- ══════════ 應計股息的變化 ══════════ -->
+<div id="main-tab-div-accruals" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">應計股息的變化</span><span class="card-badge">{pnl_fmt(sum(i['amount'] for i in div_accr_items))}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">代碼</th><th class="th-l">幣別</th><th class="th-r">淨額</th>
+    </tr></thead>
+    <tbody>{div_accr_rows_html if div_accr_rows_html else '<tr><td colspan="3" class="empty-state">無應計股息記錄</td></tr>'}</tbody></table></div>
+    {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono ' + pnl_class(sum(i["amount"] for i in div_accr_items)) + '" style="font-size:13px;font-weight:600;">' + pnl_fmt(sum(i["amount"] for i in div_accr_items)) + '</span></div>' if div_accr_items else ''}
+  </div>
+</div>
+
+<!-- ══════════ 利息 ══════════ -->
+<div id="main-tab-interest" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">利息明細</span><span class="card-badge {'card-badge-red' if intst < 0 else ''}">{pnl_fmt(intst)}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead>
+    <tbody>{int_rows_html if int_rows_html else '<tr><td colspan="4" class="empty-state">無利息記錄</td></tr>'}</tbody></table></div>
+    {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono ' + pnl_class(intst) + '" style="font-size:13px;font-weight:600;">' + pnl_fmt(intst) + '</span></div>' if int_items else ''}
+  </div>
+</div>
+
+<!-- ══════════ 應計利息變更 ══════════ -->
+<div id="main-tab-int-accruals" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">應計利息變更</span><span class="card-badge">{pnl_fmt(sum(i['amount'] for i in int_accr_items))}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead>
+    <tbody>{int_accr_rows_html if int_accr_rows_html else '<tr><td colspan="4" class="empty-state">無應計利息記錄</td></tr>'}</tbody></table></div>
+    {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono ' + pnl_class(sum(i["amount"] for i in int_accr_items)) + '" style="font-size:13px;font-weight:600;">' + pnl_fmt(sum(i["amount"] for i in int_accr_items)) + '</span></div>' if int_accr_items else ''}
+  </div>
+</div>
+
+<!-- ══════════ 其它費用 ══════════ -->
+<div id="main-tab-fees" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">其它費用明細</span><span class="card-badge card-badge-red">{pnl_fmt(ofees)}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">日期</th><th class="th-l">描述</th><th class="th-r">金額</th>
+    </tr></thead>
+    <tbody>{fee_rows_html if fee_rows_html else '<tr><td colspan="3" class="empty-state">無費用記錄</td></tr>'}</tbody></table></div>
     {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono neg" style="font-size:13px;font-weight:600;">' + pnl_fmt(ofees) + '</span></div>' if fees else ''}
   </div>
 </div>
 
-<!-- ══════════ WITHDRAWALS ══════════ -->
-{'<div id="main-withdrawals" class="main-panel hidden"><div class="data-card"><div class="data-card-header"><span class="card-title">存提款記錄</span></div><div style="overflow-x:auto;"><table><thead><tr class="table-head-row"><th class="th-l">日期</th><th class="th-l">幣別</th><th class="th-l">描述</th><th class="th-r">金額</th></tr></thead><tbody>' + wdr_rows_html + '</tbody></table></div></div></div>' if wdrs else ''}
+<!-- ══════════ 佣金 ══════════ -->
+<div id="main-tab-commissions" class="main-panel hidden">
+  <div class="data-card">
+    <div class="data-card-header"><span class="card-title">佣金明細</span><span class="card-badge card-badge-red">{pnl_fmt(comm_total_val)}</span></div>
+    <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+      <th class="th-l">代碼</th><th class="th-l">名稱 / 描述</th><th class="th-r">佣金</th>
+    </tr></thead>
+    <tbody>{comm_rows_html if comm_rows_html else '<tr><td colspan="3" class="empty-state">無佣金記錄</td></tr>'}</tbody></table></div>
+    {'<div class="summary-total"><span style="font-size:12px;font-weight:600;color:#374840;">合計</span><span class="font-mono neg" style="font-size:13px;font-weight:600;">' + pnl_fmt(comm_total_val) + '</span></div>' if comm_rows_html else ''}
+  </div>
+</div>
+
 
 </div><!-- end container -->
 
@@ -1105,17 +1299,34 @@ document.querySelectorAll('.sortable-table').forEach(function(table) {{
       }});
       th.classList.add(state.asc ? 'sort-asc' : 'sort-desc');
       var tbody = table.querySelector('tbody');
-      var rows  = Array.from(tbody.querySelectorAll('tr'));
-      rows.sort(function(a, b) {{
-        var aCell = a.querySelectorAll('td')[col];
-        var bCell = b.querySelectorAll('td')[col];
+      // Build groups: each group = [summary row, ...detail rows]
+      // Detail rows have class starting with "det-" or "comm-child-"
+      var groups = [];
+      var allRows = Array.from(tbody.querySelectorAll('tr'));
+      allRows.forEach(function(r) {{
+        var isChild = Array.from(r.classList).some(function(c) {{
+          return c.startsWith('det-') || c.startsWith('comm-child-');
+        }});
+        if (!isChild) {{
+          groups.push([r]);
+        }} else if (groups.length > 0) {{
+          groups[groups.length - 1].push(r);
+        }}
+      }});
+      // Sort by the summary row (first row of each group)
+      groups.sort(function(a, b) {{
+        var aCell = a[0].querySelectorAll('td')[col];
+        var bCell = b[0].querySelectorAll('td')[col];
         if (!aCell || !bCell) return 0;
         var aVal = aCell.dataset.val !== undefined ? aCell.dataset.val : aCell.textContent.trim();
         var bVal = bCell.dataset.val !== undefined ? bCell.dataset.val : bCell.textContent.trim();
         var cmp  = (type === 'num') ? ((parseFloat(aVal) || 0) - (parseFloat(bVal) || 0)) : aVal.localeCompare(bVal, 'zh-Hant');
         return state.asc ? cmp : -cmp;
       }});
-      rows.forEach(function(r) {{ tbody.appendChild(r); }});
+      // Re-append groups in sorted order (keeping detail rows with their parent)
+      groups.forEach(function(group) {{
+        group.forEach(function(r) {{ tbody.appendChild(r); }});
+      }});
     }});
   }});
 }});
@@ -1124,7 +1335,36 @@ function showMain(id, btn) {{
   document.querySelectorAll('.main-panel').forEach(p => p.classList.add('hidden'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('main-' + id).classList.remove('hidden');
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
+  else {{
+    document.querySelectorAll('.nav-btn').forEach(b => {{
+      if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + id + "'")) b.classList.add('active');
+    }});
+  }}
+}}
+
+function toggleDet(uid, arrow) {{
+  var rows = document.querySelectorAll('.det-' + uid);
+  var open = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach(function(r) {{ r.style.display = open ? 'none' : 'table-row'; }});
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(-90deg)';
+}}
+
+function toggleComm(uid) {{
+  var rows = document.querySelectorAll('.comm-child-' + uid);
+  var arrow = document.getElementById('arr-' + uid);
+  var open = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach(function(r) {{ r.style.display = open ? 'none' : 'table-row'; }});
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(-90deg)';
+}}
+
+function toggleMtm(row) {{
+  var children = row.nextElementSibling;
+  if (!children || !children.classList.contains('mtm-children')) return;
+  var open = children.style.display !== 'none';
+  children.style.display = open ? 'none' : 'block';
+  var arrow = row.querySelector('.mtm-arrow');
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(-90deg)';
 }}
 
 const inp  = document.getElementById('csvInput');
@@ -1145,6 +1385,8 @@ function loadFile(file) {{
     .then(html => {{ document.open(); document.write(html); document.close(); }})
     .catch(e => alert('上載失敗: ' + e));
 }}
+
+
 </script>
 </body>
 </html>"""
