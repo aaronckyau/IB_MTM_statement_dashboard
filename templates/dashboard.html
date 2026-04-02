@@ -720,7 +720,7 @@ tailwind.config = {
 </footer>
 
 <!-- Safe JSON data — not executable, no injection risk -->
-<script type="application/json" id="sym-data">{{ sym_data_json }}</script>
+<script type="application/json" id="sym-data">{{ sym_data_json | safe }}</script>
 
 <script>
 const NAV_DATA   = {{ chart_data|safe }};
