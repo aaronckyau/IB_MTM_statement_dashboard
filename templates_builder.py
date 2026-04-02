@@ -36,7 +36,7 @@ def fmt_qty(v):
     return f"{v:g}"
 
 def _effective_pnl(item):
-    return item['pos_pnl'] + item['trd_pnl'] if item['total_pnl'] == 0 else item['total_pnl']
+    return item['pos_pnl'] + item['trd_pnl']
 
 
 # ── Detail row helpers ───────────────────────────────────────────────────────
@@ -80,10 +80,10 @@ CHG_TAB = {
 
 # ── Symbol lookup data ───────────────────────────────────────────────────────
 
-def _build_sym_data(stocks, opts):
+def _build_sym_data(stocks, opts, fx=None):
     sym_data = {}
     for s in stocks:
-        e = sym_data.setdefault(s['ticker'], {'stk_open': [], 'stk_closed': [], 'opt_open': [], 'opt_closed': []})
+        e = sym_data.setdefault(s['ticker'], {'stk_open': [], 'stk_closed': [], 'opt_open': [], 'opt_closed': [], 'fx': []})
         rec = {
             'ticker': s['ticker'], 'name': s['name'],
             'qty': s['qty'], 'px': s['px'], 'mv': s['mv'],
@@ -93,7 +93,7 @@ def _build_sym_data(stocks, opts):
         e['stk_open' if s['qty'] != 0 else 'stk_closed'].append(rec)
     for o in opts:
         und = o['contract'].split()[0] if o['contract'] else o['contract']
-        e = sym_data.setdefault(und, {'stk_open': [], 'stk_closed': [], 'opt_open': [], 'opt_closed': []})
+        e = sym_data.setdefault(und, {'stk_open': [], 'stk_closed': [], 'opt_open': [], 'opt_closed': [], 'fx': []})
         rec = {
             'contract': o['contract'], 'desc': o['desc'],
             'qty': o['qty'], 'px': o['px'], 'mv': o['mv'],
@@ -101,6 +101,16 @@ def _build_sym_data(stocks, opts):
             'comm': o['comm'], 'eff_pnl': round(_effective_pnl(o), 2),
         }
         e['opt_open' if o['qty'] != 0 else 'opt_closed'].append(rec)
+    for f in (fx or []):
+        e = sym_data.setdefault(f['ccy'], {'stk_open': [], 'stk_closed': [], 'opt_open': [], 'opt_closed': [], 'fx': []})
+        rec = {
+            'ccy': f['ccy'], 'qty': f['qty'], 'prev_qty': f['prev_qty'],
+            'rate': f['rate'], 'prev_rate': f['prev_rate'],
+            'mv': f['mv'], 'prev_mv': f['prev_mv'],
+            'pos_pnl': f['pos_pnl'], 'trd_pnl': f['trd_pnl'],
+            'comm': f['comm'], 'eff_pnl': round(f['pos_pnl'] + f['trd_pnl'], 2),
+        }
+        e['fx'].append(rec)
     return sym_data
 
 
@@ -143,6 +153,7 @@ def build_context(data: dict) -> dict:
     stk_closed_pnl = sum(_effective_pnl(s) for s in stocks_closed)
     opt_open_pnl   = sum(_effective_pnl(o) for o in opts_open)
     opt_closed_pnl = sum(_effective_pnl(o) for o in opts_closed)
+    fx_pnl         = sum(f.get('pos_pnl', 0) + f.get('trd_pnl', 0) for f in fx)
 
     # ── Detail maps ──
     stk_det_map = _build_stk_det_map(stk_det)
@@ -243,7 +254,7 @@ def build_context(data: dict) -> dict:
         nav_detail_rows.append({'label': label_map.get(key, key), 'prior': prior, 'total': total, 'change': change})
 
     # ── Symbol lookup ──
-    sym_data = _build_sym_data(stocks, opts)
+    sym_data = _build_sym_data(stocks, opts, fx)
 
     # ── FX enriched ──
     fx_enriched = []
@@ -291,6 +302,7 @@ def build_context(data: dict) -> dict:
         'stk_closed_pnl': stk_closed_pnl,
         'opt_open_pnl':   opt_open_pnl,
         'opt_closed_pnl': opt_closed_pnl,
+        'fx_pnl':         fx_pnl,
         # fx / dividends / fees / interest
         'fx':           fx_enriched,
         'divs':         sorted(divs, key=lambda x: x['date']),
@@ -310,15 +322,15 @@ def build_context(data: dict) -> dict:
         'recon_items':  recon_items,
         'nav_chg_total': sum(r['val'] for r in recon_items),
         # chart
-        'chart_data':   json.dumps({'labels': chart_labels, 'values': chart_values, 'colors': chart_colors}),
-        'stock_chart':  json.dumps(stock_chart),
+        'chart_data':   json.dumps({'labels': chart_labels, 'values': chart_values, 'colors': chart_colors}).replace('</', '<\\/'),
+        'stock_chart':  json.dumps(stock_chart).replace('</', '<\\/'),
         # commission
         'comm_list':    comm_list,
         'comm_total':   comm_total_val,
         # nav detail
         'nav_detail_rows': nav_detail_rows,
         # symbol lookup
-        'sym_data_json': json.dumps(sym_data),
+        'sym_data_json': json.dumps(sym_data).replace('</', '<\\/'),
         # helpers
         'fmt_usd':   fmt_usd,
         'pnl_fmt':   pnl_fmt,

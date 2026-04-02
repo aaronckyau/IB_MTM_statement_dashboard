@@ -221,6 +221,7 @@ tailwind.config = {
             <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">股票平倉</a><span class="font-mono text-sm {{ pnl_class(stk_closed_pnl) }}">{{ pnl_fmt(stk_closed_pnl) }}</span></div>
             <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">期權持倉</a><span class="font-mono text-sm {{ pnl_class(opt_open_pnl) }}">{{ pnl_fmt(opt_open_pnl) }}</span></div>
             <div class="summary-item" style="padding-left:24px;"><a onclick="showMain('mtm',null);event.stopPropagation();" href="#" class="recon-link">期權平倉</a><span class="font-mono text-sm {{ pnl_class(opt_closed_pnl) }}">{{ pnl_fmt(opt_closed_pnl) }}</span></div>
+            {% if fx_pnl != 0 %}<div class="summary-item" style="padding-left:24px;"><span style="font-size:13px;color:#374840;">外匯</span><span class="font-mono text-sm {{ pnl_class(fx_pnl) }}">{{ pnl_fmt(fx_pnl) }}</span></div>{% endif %}
           </div>
         {% elif item.tab_id %}
           <div class="summary-item">
@@ -477,6 +478,42 @@ tailwind.config = {
       </tbody>
     </table></div>
   </div>
+
+  {% if fx %}
+  <div class="data-card" style="margin-top:16px;">
+    <div class="data-card-header">
+      <span class="card-title">外匯</span>
+      <span class="card-badge {{ 'card-badge-red' if fx_pnl < 0 else '' }}">{{ pnl_fmt(fx_pnl) }}</span>
+    </div>
+    <div style="overflow-x:auto;"><table class="sortable-table" id="tbl-fx">
+      <thead><tr class="table-head-row">
+        <th class="th-l">貨幣</th>
+        <th class="th-r">期初數量</th><th class="th-r">期末數量</th>
+        <th class="th-r">期初匯率</th><th class="th-r">期末匯率</th>
+        <th class="th-r">期初市值</th><th class="th-r">期末市值</th>
+        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th>
+        <th class="th-r">佣金</th><th class="th-r">總盈虧</th>
+      </tr></thead>
+      <tbody>
+        {% for f in fx_enriched %}
+        <tr>
+          <td class="px-3 py-2.5"><span class="badge badge-ccy">{{ f.ccy }}</span></td>
+          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">{{ fmt_qty(f.prev_qty) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm">{{ fmt_qty(f.qty) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">{{ dash(f.prev_rate, fmt_px4) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm">{{ dash(f.rate, fmt_px4) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">{{ dash(f.prev_mv, fmt_usd) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm">{{ dash(f.mv, fmt_usd) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(f.pos_pnl) }}">{{ dash(f.pos_pnl, pnl_fmt) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(f.trd_pnl) }}">{{ dash(f.trd_pnl, pnl_fmt) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm {{ pnl_class(f.comm) }}">{{ dash(f.comm, pnl_fmt) }}</td>
+          <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold {{ pnl_class(f.pos_pnl + f.trd_pnl) }}">{{ pnl_fmt(f.pos_pnl + f.trd_pnl) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- ══════════ 存款和取款 ══════════ -->
@@ -675,42 +712,6 @@ tailwind.config = {
     </table></div>
   </div>
 
-  <div id="sym-detail-wrap" style="display:none;">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-      <button onclick="closeSym()" style="font-size:12px;padding:4px 10px;border:1px solid #d4e4d4;border-radius:5px;background:#fff;color:#5a6e5c;cursor:pointer;">← 返回排行榜</button>
-      <span id="sym-detail-title" style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#166534;background:#f0f7f1;border:1px solid #d4e4d4;border-radius:5px;padding:4px 14px;"></span>
-    </div>
-    <div id="sym-cards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
-    <div id="sym-so-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">股票持倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">代碼</th><th class="th-l">名稱</th><th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
-      </tr></thead><tbody id="sym-so-body"></tbody></table></div>
-    </div>
-    <div id="sym-sc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">股票平倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">代碼</th><th class="th-l">名稱</th><th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
-      </tr></thead><tbody id="sym-sc-body"></tbody></table></div>
-    </div>
-    <div id="sym-oo-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">期權持倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">合約</th><th class="th-l">描述</th><th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
-      </tr></thead><tbody id="sym-oo-body"></tbody></table></div>
-    </div>
-    <div id="sym-oc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">期權平倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">合約</th><th class="th-l">描述</th><th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
-      </tr></thead><tbody id="sym-oc-body"></tbody></table></div>
-    </div>
-    <div id="sym-empty" class="empty-state" style="display:none;">此標的無任何記錄</div>
-  </div>
 </div>
 
 </div><!-- end container -->
@@ -862,8 +863,9 @@ function loadFile(file) {
   function symTotal(d) {
     var stk  = d.stk_open.concat(d.stk_closed).reduce(function(a,r){return a+r.eff_pnl;},0);
     var opt  = d.opt_open.concat(d.opt_closed).reduce(function(a,r){return a+r.eff_pnl;},0);
+    var fx   = (d.fx||[]).reduce(function(a,r){return a+r.eff_pnl;},0);
     var comm = d.stk_open.concat(d.stk_closed,d.opt_open,d.opt_closed).reduce(function(a,r){return a+r.comm;},0);
-    return {stk:stk, opt:opt, comm:comm, total:stk+opt+comm};
+    return {stk:stk, opt:opt, fx:fx, comm:comm, total:stk+opt+fx+comm};
   }
 
   function contractBadge(c) {
@@ -892,7 +894,7 @@ function loadFile(file) {
     var bg    = r.total >= 0 ? '#dcfce7' : '#fee2e2';
     var bar   = '<div style="background:' + bg + ';border-radius:3px;height:8px;width:100%;">'
               + '<div style="background:' + color + ';border-radius:3px;height:8px;width:' + pct + '%;"></div></div>';
-    return '<tr style="cursor:pointer;" onclick="showSym(' + JSON.stringify(r.sym) + ')">'
+    return '<tr style="cursor:pointer;" onclick="showSym(' + JSON.stringify(r.sym).replace(/"/g, '&quot;') + ')">'
       + '<td class="px-3 py-2.5 font-mono text-xs text-stone-400">' + (i+1) + '</td>'
       + '<td class="px-3 py-2.5"><span class="ticker-chip">' + r.sym + '</span></td>'
       + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.stk) + '">' + (r.stk!==0 ? fmtUsd(r.stk) : '—') + '</td>'
@@ -904,16 +906,21 @@ function loadFile(file) {
   }).join('');
 
   window.showSym = function(sym) {
-    var d = SYM_DATA[sym]; if (!d) return;
+    var d = SYM_DATA[sym];
+    if (!d) { console.error('showSym: no data for', sym, 'keys:', Object.keys(SYM_DATA).slice(0,5)); return; }
     var t = symTotal(d);
-    document.getElementById('sym-ranking-wrap').style.display = 'none';
-    document.getElementById('sym-detail-wrap').style.display  = '';
-    document.getElementById('sym-detail-title').textContent   = sym;
-    document.getElementById('sym-cards').innerHTML =
-        '<div class="metric-tile ' + (t.stk>=0?'t-pos':'t-neg') + '"><div class="metric-label">股票盈虧</div><div class="metric-value ' + pc(t.stk) + '">' + fmtUsd(t.stk) + '</div></div>'
-      + '<div class="metric-tile ' + (t.opt>=0?'t-pos':'t-neg') + '"><div class="metric-label">期權盈虧</div><div class="metric-value ' + pc(t.opt) + '">' + fmtUsd(t.opt) + '</div></div>'
-      + '<div class="metric-tile t-neg"><div class="metric-label">佣金</div><div class="metric-value ' + pc(t.comm) + '">' + fmtUsd(t.comm) + '</div></div>'
-      + '<div class="metric-tile ' + (t.total>=0?'t-pos':'t-neg') + '"><div class="metric-label">總計</div><div class="metric-value ' + pc(t.total) + '" style="font-size:20px;font-weight:700;">' + fmtUsd(t.total) + '</div></div>';
+    var overlay = document.getElementById('sym-modal-overlay');
+    if (!overlay) { console.error('showSym: modal overlay element not found'); return; }
+    overlay.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    document.getElementById('sym-detail-title').textContent = sym;
+    var cards = '';
+    if (t.stk !== 0) cards += '<div class="metric-tile ' + (t.stk>=0?'t-pos':'t-neg') + '"><div class="metric-label">股票盈虧</div><div class="metric-value ' + pc(t.stk) + '">' + fmtUsd(t.stk) + '</div></div>';
+    if (t.opt !== 0) cards += '<div class="metric-tile ' + (t.opt>=0?'t-pos':'t-neg') + '"><div class="metric-label">期權盈虧</div><div class="metric-value ' + pc(t.opt) + '">' + fmtUsd(t.opt) + '</div></div>';
+    if (t.fx  !== 0) cards += '<div class="metric-tile ' + (t.fx>=0?'t-pos':'t-neg') + '"><div class="metric-label">外匯盈虧</div><div class="metric-value ' + pc(t.fx) + '">' + fmtUsd(t.fx) + '</div></div>';
+    if (t.comm !== 0) cards += '<div class="metric-tile t-neg"><div class="metric-label">佣金</div><div class="metric-value ' + pc(t.comm) + '">' + fmtUsd(t.comm) + '</div></div>';
+    cards += '<div class="metric-tile ' + (t.total>=0?'t-pos':'t-neg') + '"><div class="metric-label">總計</div><div class="metric-value ' + pc(t.total) + '" style="font-size:20px;font-weight:700;">' + fmtUsd(t.total) + '</div></div>';
+    document.getElementById('sym-cards').innerHTML = cards;
 
     function stkRows(arr) {
       return arr.map(function(r) {
@@ -948,6 +955,24 @@ function loadFile(file) {
           + '</tr>';
       }).join('');
     }
+    function fxRows(arr) {
+      return arr.map(function(r) {
+        var eff = r.pos_pnl + r.trd_pnl;
+        return '<tr>'
+          + '<td class="px-3 py-2.5"><span class="badge badge-ccy">' + r.ccy + '</span></td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">' + r.prev_qty + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + r.qty + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">' + dash(r.prev_rate,function(v){return '$'+v.toFixed(4);}) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.rate,function(v){return '$'+v.toFixed(4);}) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-xs text-stone-400">' + dash(r.prev_mv,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.mv,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.pos_pnl) + '">' + dash(r.pos_pnl,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.trd_pnl) + '">' + dash(r.trd_pnl,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + dash(r.comm,fmtUsd) + '</td>'
+          + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(eff) + '">' + fmtUsd(eff) + '</td>'
+          + '</tr>';
+      }).join('');
+    }
     function setSection(wId, bId, html) {
       var w = document.getElementById(wId), b = document.getElementById(bId);
       if (html) { b.innerHTML = html; w.style.display = ''; } else { w.style.display = 'none'; }
@@ -956,15 +981,75 @@ function loadFile(file) {
     setSection('sym-sc-wrap','sym-sc-body', stkRows(d.stk_closed));
     setSection('sym-oo-wrap','sym-oo-body', optRows(d.opt_open));
     setSection('sym-oc-wrap','sym-oc-body', optRows(d.opt_closed));
-    var hasAny = d.stk_open.length+d.stk_closed.length+d.opt_open.length+d.opt_closed.length > 0;
+    setSection('sym-fx-wrap','sym-fx-body', fxRows(d.fx||[]));
+    var hasAny = d.stk_open.length+d.stk_closed.length+d.opt_open.length+d.opt_closed.length+(d.fx||[]).length > 0;
     document.getElementById('sym-empty').style.display = hasAny ? 'none' : '';
   };
 
   window.closeSym = function() {
-    document.getElementById('sym-detail-wrap').style.display  = 'none';
-    document.getElementById('sym-ranking-wrap').style.display = '';
+    document.getElementById('sym-modal-overlay').style.display = 'none';
+    document.body.style.overflow = '';
   };
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") closeSym();
+  });
 })();
 </script>
+
+<!-- Symbol Detail Modal -->
+<div id="sym-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;overflow-y:auto;padding:32px 16px;" onclick="if(event.target===this)closeSym();">
+  <div style="background:#fff;border-radius:10px;max-width:1100px;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;background:#f6fbf6;border-bottom:2px solid #166534;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5a6e5c;text-transform:uppercase;letter-spacing:.05em;">標的分析</span>
+        <span id="sym-detail-title" style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:#166534;background:#f0f7f1;border:1px solid #d4e4d4;border-radius:5px;padding:3px 14px;"></span>
+      </div>
+      <button onclick="closeSym()" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid #d4e4d4;border-radius:6px;background:#fff;color:#5a6e5c;cursor:pointer;font-size:16px;line-height:1;">&#x2715;</button>
+    </div>
+    <div id="sym-cards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 24px;background:#fafcfa;border-bottom:1px solid #e8f0e8;"></div>
+    <div style="padding:16px 24px;">
+      <div id="sym-so-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+        <div class="data-card-header"><span class="card-title">股票持倉</span></div>
+        <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+          <th class="th-l">代碼</th><th class="th-l">名稱</th><th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
+          <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
+        </tr></thead><tbody id="sym-so-body"></tbody></table></div>
+      </div>
+      <div id="sym-sc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+        <div class="data-card-header"><span class="card-title">股票平倉</span></div>
+        <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+          <th class="th-l">代碼</th><th class="th-l">名稱</th><th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
+          <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
+        </tr></thead><tbody id="sym-sc-body"></tbody></table></div>
+      </div>
+      <div id="sym-oo-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+        <div class="data-card-header"><span class="card-title">期權持倉</span></div>
+        <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+          <th class="th-l">合約</th><th class="th-l">描述</th><th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
+          <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
+        </tr></thead><tbody id="sym-oo-body"></tbody></table></div>
+      </div>
+      <div id="sym-oc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+        <div class="data-card-header"><span class="card-title">期權平倉</span></div>
+        <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+          <th class="th-l">合約</th><th class="th-l">描述</th><th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
+          <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
+        </tr></thead><tbody id="sym-oc-body"></tbody></table></div>
+      </div>
+      <div id="sym-fx-wrap" class="data-card" style="margin-bottom:16px;display:none;">
+        <div class="data-card-header"><span class="card-title">外匯</span></div>
+        <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
+          <th class="th-l">貨幣</th><th class="th-r">期初數量</th><th class="th-r">期末數量</th>
+          <th class="th-r">期初匯率</th><th class="th-r">期末匯率</th>
+          <th class="th-r">期初市值</th><th class="th-r">期末市值</th>
+          <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
+        </tr></thead><tbody id="sym-fx-body"></tbody></table></div>
+      </div>
+      <div id="sym-empty" class="empty-state" style="display:none;">此標的無任何記錄</div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

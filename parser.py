@@ -234,11 +234,14 @@ def parse_mtm_csv(content: str) -> dict:
             prev_qty = safe_float(r[7]); qty = safe_float(r[8])
             prev_rate= safe_float(r[9]); rate= safe_float(r[10])
             prev_mv = safe_float(r[11]); mv  = safe_float(r[12])
+            pos_pnl = safe_float(r[13]); trd_pnl = safe_float(r[14])
             comm      = safe_float(r[15])
             total_pnl = safe_float(r[17])
             fx.append({'ccy':ccy,'prev_qty':prev_qty,'qty':qty,
                        'prev_rate':prev_rate,'rate':rate,
-                       'prev_mv':prev_mv,'mv':mv,'comm':comm,'total_pnl':total_pnl})
+                       'prev_mv':prev_mv,'mv':mv,
+                       'pos_pnl':pos_pnl,'trd_pnl':trd_pnl,
+                       'comm':comm,'total_pnl':total_pnl})
 
     # ── Dividends ──
     div_rows = sec('DIVIDENDS')
