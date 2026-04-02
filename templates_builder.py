@@ -501,27 +501,6 @@ def build_html(data: dict) -> str:
 
 
     # ────────────────────────────────────────────
-    # SYMBOL LOOKUP DATA (safe JSON via <script type="application/json">)
-    # ────────────────────────────────────────────
-    sym_data = {}
-    for s in stocks:
-        und = s['ticker']
-        e = sym_data.setdefault(und, {'stk_open':[],'stk_closed':[],'opt_open':[],'opt_closed':[]})
-        rec = {'ticker':s['ticker'],'name':s['name'],'qty':s['qty'],'px':s['px'],
-               'mv':s['mv'],'pos_pnl':s['pos_pnl'],'trd_pnl':s['trd_pnl'],
-               'comm':s['comm'],'eff_pnl':round(_effective_pnl(s),2)}
-        e['stk_open' if s['qty'] != 0 else 'stk_closed'].append(rec)
-    for o in opts:
-        und = o['contract'].split()[0] if o['contract'] else o['contract']
-        e = sym_data.setdefault(und, {'stk_open':[],'stk_closed':[],'opt_open':[],'opt_closed':[]})
-        rec = {'contract':o['contract'],'desc':o['desc'],'qty':o['qty'],'px':o['px'],
-               'mv':o['mv'],'pos_pnl':o['pos_pnl'],'trd_pnl':o['trd_pnl'],
-               'comm':o['comm'],'eff_pnl':round(_effective_pnl(o),2)}
-        e['opt_open' if o['qty'] != 0 else 'opt_closed'].append(rec)
-    import json as _json
-    sym_data_json = _json.dumps(sym_data, ensure_ascii=False)
-
-    # ────────────────────────────────────────────
     # NAV detail breakdown (from nav['detail'])
     # ────────────────────────────────────────────
     nav_detail = nav.get('detail', {})
@@ -1005,7 +984,6 @@ tailwind.config = {{
   {_intaccr_btn}
   <button class="nav-btn" onclick="showMain('tab-fees',this)">其它費用</button>
   <button class="nav-btn" onclick="showMain('tab-commissions',this)">佣金</button>
-  <button class="nav-btn" onclick="showMain('tab-symbol',this)">代碼查詢</button>
 </div>
 
 <!-- ══════════ OVERVIEW ══════════ -->
@@ -1245,79 +1223,6 @@ tailwind.config = {{
 </div>
 
 
-<!-- ══════════ 代碼查詢 ══════════ -->
-<div id="main-tab-symbol" class="main-panel hidden">
-
-  <!-- 排行榜 -->
-  <div id="sym-ranking-wrap" class="data-card" style="margin-bottom:16px;">
-    <div class="data-card-header">
-      <span class="card-title">標的排行榜</span>
-      <span style="font-size:11px;color:#8a9e8c;">點擊行查看詳情</span>
-    </div>
-    <div style="overflow-x:auto;"><table id="sym-rank-table">
-      <thead><tr class="table-head-row">
-        <th class="th-l" style="width:40px;">#</th>
-        <th class="th-l">標的</th>
-        <th class="th-r">股票盈虧</th>
-        <th class="th-r">期權盈虧</th>
-        <th class="th-r">佣金</th>
-        <th class="th-r" style="min-width:160px;">盈虧走勢</th>
-        <th class="th-r">總盈虧</th>
-      </tr></thead>
-      <tbody id="sym-rank-body"></tbody>
-    </table></div>
-  </div>
-
-  <!-- 詳情區（點擊排行榜後顯示） -->
-  <div id="sym-detail-wrap" style="display:none;">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-      <button onclick="closeSym()" style="font-size:12px;padding:4px 10px;border:1px solid #d4e4d4;border-radius:5px;background:#fff;color:#5a6e5c;cursor:pointer;">← 返回排行榜</button>
-      <span id="sym-detail-title" style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:#166534;background:#f0f7f1;border:1px solid #d4e4d4;border-radius:5px;padding:4px 14px;"></span>
-    </div>
-    <!-- summary cards -->
-    <div id="sym-cards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
-    <!-- 股票持倉 -->
-    <div id="sym-so-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">股票持倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">代碼</th><th class="th-l">名稱</th>
-        <th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
-      </tr></thead><tbody id="sym-so-body"></tbody></table></div>
-    </div>
-    <!-- 股票平倉 -->
-    <div id="sym-sc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">股票平倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">代碼</th><th class="th-l">名稱</th>
-        <th class="th-r">數量</th><th class="th-r">現價</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th>
-      </tr></thead><tbody id="sym-sc-body"></tbody></table></div>
-    </div>
-    <!-- 期權持倉 -->
-    <div id="sym-oo-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">期權持倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">合約</th><th class="th-l">描述</th>
-        <th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
-      </tr></thead><tbody id="sym-oo-body"></tbody></table></div>
-    </div>
-    <!-- 期權平倉 -->
-    <div id="sym-oc-wrap" class="data-card" style="margin-bottom:16px;display:none;">
-      <div class="data-card-header"><span class="card-title">期權平倉</span></div>
-      <div style="overflow-x:auto;"><table><thead><tr class="table-head-row">
-        <th class="th-l">合約</th><th class="th-l">描述</th>
-        <th class="th-r">數量</th><th class="th-r">價格</th><th class="th-r">市值</th>
-        <th class="th-r">持倉盈虧</th><th class="th-r">交易盈虧</th><th class="th-r">佣金</th><th class="th-r">總盈虧</th><th class="th-r">狀態</th>
-      </tr></thead><tbody id="sym-oc-body"></tbody></table></div>
-    </div>
-    <div id="sym-empty" class="empty-state" style="display:none;">此標的無任何記錄</div>
-  </div>
-
-</div>
-
-
 </div><!-- end container -->
 
 <footer style="text-align:center;padding:20px;font-size:11px;color:#8a9e8c;border-top:1px solid #e8f0e8;margin-top:8px;font-family:'IBM Plex Mono',monospace;">
@@ -1482,140 +1387,7 @@ function loadFile(file) {{
 }}
 
 
-// ── Symbol Lookup / Ranking ──
-(function() {{
-  var raw = document.getElementById('sym-data');
-  if (!raw) return;
-  var SYM_DATA = JSON.parse(raw.textContent);
-
-  function fmtUsd(v) {{
-    var s = '$' + Math.abs(v).toLocaleString('en-US', {{minimumFractionDigits:2,maximumFractionDigits:2}});
-    return v < 0 ? '-' + s : (v > 0 ? '+' + s : s);
-  }}
-  function pc(v) {{ return v > 0 ? 'pos' : (v < 0 ? 'neg' : 'neu'); }}
-  function dash(v, fn) {{ return v === 0 ? '\u2014' : fn(v); }}
-
-  function symTotal(d) {{
-    var stk  = d.stk_open.concat(d.stk_closed).reduce(function(a,r){{return a+r.eff_pnl;}},0);
-    var opt  = d.opt_open.concat(d.opt_closed).reduce(function(a,r){{return a+r.eff_pnl;}},0);
-    var comm = d.stk_open.concat(d.stk_closed,d.opt_open,d.opt_closed).reduce(function(a,r){{return a+r.comm;}},0);
-    return {{stk:stk, opt:opt, comm:comm, total:stk+opt+comm}};
-  }}
-
-  function contractBadge(c) {{
-    var p = c ? c.trim().split(' ') : [];
-    if (p.length < 4) return '<span class="ticker-chip" style="font-size:10px;">' + (c||'') + '</span>';
-    var cp = p[3].toUpperCase();
-    var cpStyle = cp === 'C'
-      ? 'background:#dcfce7;color:#166534;border:1px solid #bbddbf;'
-      : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;';
-    return '<span class="ticker-chip" style="font-size:10px;">' + p[0] + '</span>'
-      + ' <span style="font-size:9px;font-family:\'IBM Plex Mono\',monospace;color:#5a6e5c;">' + p[1] + '</span>'
-      + ' <span style="font-size:10px;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#374840;">$' + p[2] + '</span>'
-      + ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;font-family:\'IBM Plex Mono\',monospace;font-weight:700;' + cpStyle + '">' + cp + '</span>';
-  }}
-
-  var ranking = Object.keys(SYM_DATA).map(function(sym) {{
-    var t = symTotal(SYM_DATA[sym]);
-    return {{sym:sym, stk:t.stk, opt:t.opt, comm:t.comm, total:t.total}};
-  }});
-  ranking.sort(function(a,b){{ return b.total - a.total; }});
-
-  var maxAbs = ranking.reduce(function(m,r){{ return Math.max(m, Math.abs(r.total)); }}, 1);
-
-  var tbody = document.getElementById('sym-rank-body');
-  if (!tbody) return;
-  tbody.innerHTML = ranking.map(function(r, i) {{
-    var barPct   = Math.round(Math.abs(r.total) / maxAbs * 100);
-    var barColor = r.total >= 0 ? '#15803d' : '#dc2626';
-    var barBg    = r.total >= 0 ? '#dcfce7' : '#fee2e2';
-    var bar = '<div style="background:' + barBg + ';border-radius:3px;height:8px;width:100%;">'
-            + '<div style="background:' + barColor + ';border-radius:3px;height:8px;width:' + barPct + '%;"></div></div>';
-    return '<tr style="cursor:pointer;" onclick="showSym(' + JSON.stringify(r.sym) + ')" class="sym-rank-row">'
-      + '<td class="px-3 py-2.5 font-mono text-xs text-stone-400">' + (i+1) + '</td>'
-      + '<td class="px-3 py-2.5"><span class="ticker-chip">' + r.sym + '</span></td>'
-      + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.stk) + '">' + (r.stk !== 0 ? fmtUsd(r.stk) : '\u2014') + '</td>'
-      + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.opt) + '">' + (r.opt !== 0 ? fmtUsd(r.opt) : '\u2014') + '</td>'
-      + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + (r.comm !== 0 ? fmtUsd(r.comm) : '\u2014') + '</td>'
-      + '<td class="px-3 py-2.5" style="min-width:160px;">' + bar + '</td>'
-      + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(r.total) + '">' + fmtUsd(r.total) + '</td>'
-      + '</tr>';
-  }}).join('');
-
-  window.showSym = function(sym) {{
-    var d = SYM_DATA[sym];
-    if (!d) return;
-    var t = symTotal(d);
-    document.getElementById('sym-ranking-wrap').style.display = 'none';
-    document.getElementById('sym-detail-wrap').style.display  = '';
-    document.getElementById('sym-detail-title').textContent   = sym;
-
-    document.getElementById('sym-cards').innerHTML =
-        '<div class="metric-tile ' + (t.stk>=0?'t-pos':'t-neg') + '"><div class="metric-label">\u80a1\u7968\u76c8\u8667</div><div class="metric-value ' + pc(t.stk) + '">' + fmtUsd(t.stk) + '</div></div>'
-      + '<div class="metric-tile ' + (t.opt>=0?'t-pos':'t-neg') + '"><div class="metric-label">\u671f\u6b0a\u76c8\u8667</div><div class="metric-value ' + pc(t.opt) + '">' + fmtUsd(t.opt) + '</div></div>'
-      + '<div class="metric-tile t-neg"><div class="metric-label">\u4f63\u91d1</div><div class="metric-value ' + pc(t.comm) + '">' + fmtUsd(t.comm) + '</div></div>'
-      + '<div class="metric-tile ' + (t.total>=0?'t-pos':'t-neg') + '"><div class="metric-label">\u7e3d\u8a08</div><div class="metric-value ' + pc(t.total) + '" style="font-size:20px;font-weight:700;">' + fmtUsd(t.total) + '</div></div>';
-
-    function stkRows(arr) {{
-      return arr.map(function(r) {{
-        return '<tr>'
-          + '<td class="px-3 py-2.5"><span class="ticker-chip">' + r.ticker + '</span></td>'
-          + '<td class="px-3 py-2.5 text-xs text-stone-500 max-w-xs truncate">' + r.name + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.qty, function(v){{return ''+v;}}) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.px, function(v){{return '$'+v.toFixed(2);}}) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.mv, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.pos_pnl) + '">' + dash(r.pos_pnl, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.trd_pnl) + '">' + dash(r.trd_pnl, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + dash(r.comm, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(r.eff_pnl) + '">' + fmtUsd(r.eff_pnl) + '</td>'
-          + '</tr>';
-      }}).join('');
-    }}
-    function optRows(arr) {{
-      return arr.map(function(r) {{
-        var sc = r.qty > 0 ? 'badge-hold' : (r.qty < 0 ? 'badge-short' : 'badge-closed');
-        var sl = r.qty > 0 ? '\u6301\u6709' : (r.qty < 0 ? '\u7a7a\u982d' : '\u5df2\u5e73\u5009');
-        return '<tr>'
-          + '<td class="px-3 py-2.5">' + contractBadge(r.contract) + '</td>'
-          + '<td class="px-3 py-2.5 text-xs text-stone-500 max-w-xs truncate">' + r.desc + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.qty, function(v){{return ''+v;}}) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.px, function(v){{return '$'+v.toFixed(4);}}) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm">' + dash(r.mv, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.pos_pnl) + '">' + dash(r.pos_pnl, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.trd_pnl) + '">' + dash(r.trd_pnl, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm ' + pc(r.comm) + '">' + dash(r.comm, fmtUsd) + '</td>'
-          + '<td class="px-3 py-2.5 text-right font-mono text-sm font-semibold ' + pc(r.eff_pnl) + '">' + fmtUsd(r.eff_pnl) + '</td>'
-          + '<td class="px-3 py-2.5"><span class="badge ' + sc + '">' + sl + '</span></td>'
-          + '</tr>';
-      }}).join('');
-    }}
-
-    function setSection(wrapId, bodyId, html) {{
-      var w = document.getElementById(wrapId);
-      var b = document.getElementById(bodyId);
-      if (html) {{ b.innerHTML = html; w.style.display = ''; }}
-      else {{ w.style.display = 'none'; }}
-    }}
-    setSection('sym-so-wrap', 'sym-so-body', stkRows(d.stk_open));
-    setSection('sym-sc-wrap', 'sym-sc-body', stkRows(d.stk_closed));
-    setSection('sym-oo-wrap', 'sym-oo-body', optRows(d.opt_open));
-    setSection('sym-oc-wrap', 'sym-oc-body', optRows(d.opt_closed));
-    var hasAny = d.stk_open.length + d.stk_closed.length + d.opt_open.length + d.opt_closed.length > 0;
-    document.getElementById('sym-empty').style.display = hasAny ? 'none' : '';
-  }};
-
-  window.closeSym = function() {{
-    document.getElementById('sym-detail-wrap').style.display  = 'none';
-    document.getElementById('sym-ranking-wrap').style.display = '';
-  }};
-}})();
-
 </script>
-
-<!-- Safe JSON data for symbol lookup -->
-<script type="application/json" id="sym-data">__SYM_DATA_PLACEHOLDER__</script>
-
 </body>
 </html>"""
-    html = html.replace('__SYM_DATA_PLACEHOLDER__', sym_data_json)
     return html
